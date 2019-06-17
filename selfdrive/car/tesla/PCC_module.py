@@ -29,7 +29,7 @@ PEDAL_MAX_UP = MAX_PEDAL_VALUE * _DT / 4
 PEDAL_MAX_DOWN = MAX_PEDAL_VALUE * _DT / 0.4
 
 # min safe distance in meters. Roughly 2 car lengths.
-MIN_SAFE_DIST_M = 2.
+MIN_SAFE_DIST_M = 6.
 
 #BBTODO: move the vehicle variables; maybe make them speed variable
 TORQUE_LEVEL_ACC = 0.
