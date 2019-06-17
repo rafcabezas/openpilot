@@ -286,7 +286,10 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp, int hardwired) {
       // and it's blocked over WiFi
       // Allow ELM security mode to be set over wifi.
       if (hardwired || (setup->b.wValue.w == SAFETY_NOOUTPUT) || (setup->b.wValue.w == SAFETY_ELM327)) {
-        safety_set_mode(setup->b.wValue.w, (int16_t)setup->b.wIndex.w);
+        //BB prevent init of Panda again
+        if (safety_set_mode(setup->b.wValue.w, (int16_t)setup->b.wIndex.w) > 0) {
+          break;
+        }
         //if (safety_ignition_hook() != -1) {
           // if the ignition hook depends on something other than the started GPIO
           // we have to disable power savings (fix for GM and Tesla)

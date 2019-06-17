@@ -382,8 +382,9 @@ static void do_fake_DAS(uint32_t RIR, uint32_t RDTR) {
   //check if we got data from OP in the last two seconds
   if (current_car_time - time_last_DAS_data > 2)  {
     //no message in the last 2 seconds, reset all variables
+    reset_DAS_data();
     if (EON_is_connected == 1) {
-      reset_DAS_data();
+      //reset_DAS_data();
       EON_is_connected  = 0;
     }
   } else {

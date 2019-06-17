@@ -391,16 +391,19 @@ class PCCController(object):
         self.a_acc_sol = self.a_acc_start + (dt / _DT_MPC) * (self.a_acc - self.a_acc_start)
         self.v_acc_sol = self.v_acc_start + dt * (self.a_acc_sol + self.a_acc_start) / 2.0
 
+
         self.v_acc_start = self.v_acc_sol
         self.a_acc_start = self.a_acc_sol
 
-        # we will try to feed forward the pedal position.... we might want to feed the last output_gb....
+        # we will try to feed forward the pedal position.... we might want to feed the last_output_gb....
+        # op feeds forward self.a_acc_sol
         # it's all about testing now.
         vTarget = clip(self.v_acc_sol, 0, self.v_cruise)
         self.vTargetFuture = clip(self.v_acc_future, 0, self.v_cruise)
-        
+        feedforward = self.a_acc_sol
+        #feedforward = self.last_output_gb
         t_go, t_brake = self.LoC.update(self.enable_pedal_cruise, CS.v_ego, CS.brake_pressed != 0, CS.standstill, False, 
-                    self.v_cruise , vTarget, self.vTargetFuture, self.a_acc_sol, CS.CP)
+                    self.v_cruise , vTarget, self.vTargetFuture, feedforward, CS.CP)
         output_gb = t_go - t_brake
         #print "Output GB Follow:", output_gb
       else:
@@ -448,14 +451,14 @@ class PCCController(object):
     # accel and brake
     apply_accel = clip(output_gb, 0., accel_limits[1])
     MPC_BRAKE_MULTIPLIER = 6.
-    apply_brake = -clip(output_gb * MPC_BRAKE_MULTIPLIER, accel_limits[0], 0.)
+    apply_brake = -clip(output_gb * MPC_BRAKE_MULTIPLIER, -_decel_limit_multiplier(CS.v_ego, self.lead_1, CS), 0.)
 
     # if speed is over 5mpg, the "zero" is at PedalForZeroTorque; otherwise it is zero
     pedal_zero = 0.
     if CS.v_ego >= 5.* CV.MPH_TO_MS:
       pedal_zero = self.PedalForZeroTorque
     tesla_brake = clip((1. - apply_brake) * pedal_zero, 0, pedal_zero)
-    tesla_accel = clip(apply_accel * MAX_PEDAL_VALUE, 0, MAX_PEDAL_VALUE - tesla_brake)
+    tesla_accel = clip(apply_accel * (MAX_PEDAL_VALUE - pedal_zero) , 0, MAX_PEDAL_VALUE - pedal_zero)
     tesla_pedal = tesla_brake + tesla_accel
 
     tesla_pedal = self.pedal_hysteresis(tesla_pedal, enabled)
@@ -486,7 +489,7 @@ class PCCController(object):
     rel_speed_kph = 0.
     if self.had_lead:
       #avoid inital break when lead just detected
-      rel_speed_kph = self.lead_1.vRel * CV.MS_TO_KPH
+      rel_speed_kph = (self.lead_1.vRel + FOLLOW_TIME_S * self.lead_1.aRel) * CV.MS_TO_KPH
     # v_ego is in m/s, so safe_distance is in meters.
     safe_dist_m = _safe_distance_m(CS.v_ego)
     # Current speed in kph
@@ -511,9 +514,9 @@ class PCCController(object):
           min_vrel_kph_map = OrderedDict([
             # (distance in m, min allowed relative kph)
             (0.5 * safe_dist_m, 2),
-            (1.0 * safe_dist_m, -6),
-            (1.5 * safe_dist_m, -10),
-            (3.0 * safe_dist_m, -20)])
+            (1.0 * safe_dist_m, -2),
+            (1.5 * safe_dist_m, -5),
+            (3.0 * safe_dist_m, -15)])
           min_vrel_kph = _interp_map(lead_dist_m, min_vrel_kph_map)
           max_vrel_kph_map = OrderedDict([
             # (distance in m, max allowed relative kph)
@@ -594,11 +597,12 @@ def _is_present(lead):
 def _sec_til_collision(lead, CS):
   if _is_present(lead) and lead.vRel < 0:
     if CS.useTeslaRadar:
-      return lead.dRel / abs(lead.vRel)
+      #BB: take in consideration acceleration when looking at time to collision. 
+      return lead.dRel / abs(lead.vRel + lead.aRel * FOLLOW_TIME_S)
     else:
-      return _visual_radar_adjusted_dist_m(lead.dRel, CS) / abs(lead.vRel)
+      return _visual_radar_adjusted_dist_m(lead.dRel, CS) / abs(lead.vRel + lead.aRel * FOLLOW_TIME_S)
   else:
-    return 60  # Arbitrary, but better than MAXINT because we can still do math on it.
+    return 60.  # Arbitrary, but better than MAXINT because we can still do math on it.
   
 def _interp_map(val, val_map):
   """Helper to call interp with an OrderedDict for the mapping. I find
@@ -622,7 +626,7 @@ def _accel_limit_multiplier(v_ego, lead):
 
 def _decel_limit_multiplier(v_ego, lead, CS):
   if _is_present(lead):
-    if lead.dRel < 10:
+    if lead.dRel < MIN_SAFE_DIST_M:
       return 1.
     decel_map = OrderedDict([
       # (sec to collision, decel)
