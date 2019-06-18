@@ -397,7 +397,7 @@ class PCCController(object):
         # op feeds forward self.a_acc_sol
         # it's all about testing now.
         vTarget = clip(self.v_acc_sol, 0, self.v_cruise)
-        self.vTargetFuture = clip(self.v_acc_future, 0, self.v_cruise)
+        self.vTargetFuture = clip(self.v_acc_future, 0, self.v_pid)
         feedforward = self.a_acc_sol
         #feedforward = self.last_output_gb
         t_go, t_brake = self.LoC.update(self.enable_pedal_cruise, CS.v_ego, CS.brake_pressed != 0, CS.standstill, False, 
@@ -535,11 +535,13 @@ class PCCController(object):
           # still an acceptable speed, accept it. This could happen if the
           # driver manually accelerates, or if we roll down a hill. In either
           # case, don't fight the extra velocity unless necessary.
-          if (actual_speed_kph > new_speed_kph) and (min_kph < actual_speed_kph < max_kph):
+          if (actual_speed_kph > new_speed_kph) and (min_kph < actual_speed_kph < max_kph) and (lead_absolute_speed_kph > 30):
             new_speed_kph = actual_speed_kph
 
           new_speed_kph =  clip(new_speed_kph, min_kph, max_kph)
-          
+        #BB we can't brake below 5MPH
+        if (lead_absolute_speed_kph < 5):
+          new_speed_kph = MIN_PCC_V_KPH
         # Enforce limits on speed in the presence of a lead car.
         new_speed_kph = min(new_speed_kph,
                             _max_safe_speed_kph(lead_dist_m),
@@ -551,8 +553,9 @@ class PCCController(object):
       if CS.blinker_on:
         # Don't accelerate during manual turns.
         new_speed_kph = min(new_speed_kph, self.last_speed_kph)
-      self.last_speed_kph = new_speed_kph
-
+    if (lead_dist_m > 0) and (lead_dist_m < MIN_SAFE_DIST_M):
+      new_speed_kph = MIN_PCC_V_KPH
+    self.last_speed_kph = new_speed_kph
     return new_speed_kph * CV.KPH_TO_MS
     
   def pedal_hysteresis(self, pedal, enabled):
@@ -576,7 +579,7 @@ def _visual_radar_adjusted_dist_m(m, CS):
   return _interp_map(m, mapping)
 
 def _safe_distance_m(v_ego_ms):
-  return max(FOLLOW_TIME_S * v_ego_ms, MIN_SAFE_DIST_M)
+  return max(FOLLOW_TIME_S * (v_ego_ms+1), MIN_SAFE_DIST_M)
 
 def _max_safe_speed_kph(m):
   return CV.MS_TO_KPH * m / FOLLOW_TIME_S
@@ -596,9 +599,9 @@ def _sec_til_collision(lead, CS):
   if _is_present(lead) and lead.vRel < 0:
     if CS.useTeslaRadar:
       #BB: take in consideration acceleration when looking at time to collision. 
-      return lead.dRel / abs(lead.vRel + lead.aRel * FOLLOW_TIME_S)
+      return lead.dRel / abs(lead.vRel + min(0,lead.aRel) * FOLLOW_TIME_S)
     else:
-      return _visual_radar_adjusted_dist_m(lead.dRel, CS) / abs(lead.vRel + lead.aRel * FOLLOW_TIME_S)
+      return _visual_radar_adjusted_dist_m(lead.dRel, CS) / abs(lead.vRel + min(0,lead.aRel) * FOLLOW_TIME_S)
   else:
     return 60.  # Arbitrary, but better than MAXINT because we can still do math on it.
   
@@ -625,12 +628,13 @@ def _accel_limit_multiplier(v_ego, lead):
 def _decel_limit_multiplier(v_ego, lead, CS):
   if _is_present(lead):
     if lead.dRel < MIN_SAFE_DIST_M:
-      return 1.
+      return 10.
     decel_map = OrderedDict([
       # (sec to collision, decel)
+      (0, 10.0),
       (4, 1.0),
-      (7, 0.7),
-      (10, 0.5)])
+      (7, 0.65),
+      (10, 0.3)])
     return _interp_map(_sec_til_collision(lead, CS), decel_map)
   else:
     #BB: if we don't have a lead, don't do full regen to slow down smoother
