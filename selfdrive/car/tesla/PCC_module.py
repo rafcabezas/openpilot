@@ -339,7 +339,7 @@ class PCCController(object):
     following = self.lead_1.status and self.lead_1.dRel < 45.0 and self.lead_1.vLeadK > v_ego and self.lead_1.aLeadK > 0.0
     accel_limits = [float(x) for x in calc_cruise_accel_limits(v_ego, following)]
     accel_limits[1] *= _accel_limit_multiplier(CS.v_ego, self.lead_1)
-    accel_limits[0] *= _decel_limit_multiplier(CS.v_ego, self.lead_1, CS)
+    #accel_limits[0] *= _decel_limit_multiplier(CS.v_ego, self.lead_1, CS)
     jerk_limits = [min(-0.1, accel_limits[0]/2.), max(0.1, accel_limits[1]/3.)]  # TODO: make a separate lookup for jerk tuning
     #accel_limits = limit_accel_in_turns(v_ego, CS.angle_steers, accel_limits, CS.CP)
 
@@ -429,6 +429,7 @@ class PCCController(object):
     ##############################################################
     elif PCCModes.is_selected(OpMode(), CS.cstm_btns):
       output_gb = actuators.gas - actuators.brake
+      self.v_pid = -10.
 
     ######################################################################################
     # Determine pedal "zero"
@@ -449,7 +450,7 @@ class PCCController(object):
     # accel and brake
     apply_accel = clip(output_gb, 0., accel_limits[1])
     MPC_BRAKE_MULTIPLIER = 6.
-    apply_brake = -clip(output_gb * MPC_BRAKE_MULTIPLIER, -_decel_limit_multiplier(CS.v_ego, self.lead_1, CS), 0.)
+    apply_brake = -clip(output_gb * MPC_BRAKE_MULTIPLIER, -_decel_limit_multiplier(CS.v_ego, self.v_pid, self.lead_1, CS), 0.)
 
     # if speed is over 5mpg, the "zero" is at PedalForZeroTorque; otherwise it is zero
     pedal_zero = 0.
@@ -487,7 +488,13 @@ class PCCController(object):
     rel_speed_kph = 0.
     if self.had_lead:
       #avoid inital break when lead just detected
-      rel_speed_kph = (self.lead_1.vRel + FOLLOW_TIME_S * self.lead_1.aRel) * CV.MS_TO_KPH
+      self.vRel = 0.
+      self.aRel = 0.
+      if abs(self.lead_1.vRel) > 1:
+        self.vRel = self.lead_1.vRel
+      if abs(self.lead_1.aRel) > 1:
+        self.aRel = self.lead_1.aRel
+      rel_speed_kph = (self.vRel + FOLLOW_TIME_S * self.aRel) * CV.MS_TO_KPH
     # v_ego is in m/s, so safe_distance is in meters.
     safe_dist_m = _safe_distance_m(CS.v_ego)
     # Current speed in kph
@@ -513,13 +520,13 @@ class PCCController(object):
             # (distance in m, min allowed relative kph)
             (0.5 * safe_dist_m, 2),
             (1.0 * safe_dist_m, -2),
-            (1.5 * safe_dist_m, -5),
-            (3.0 * safe_dist_m, -15)])
+            (1.5 * safe_dist_m, -9),
+            (3.0 * safe_dist_m, -25)])
           min_vrel_kph = _interp_map(lead_dist_m, min_vrel_kph_map)
           max_vrel_kph_map = OrderedDict([
             # (distance in m, max allowed relative kph)
             (0.5 * safe_dist_m, 8),
-            (1.0 * safe_dist_m, 1),
+            (1.0 * safe_dist_m, 2),
             (1.5 * safe_dist_m, 0),
             # With visual radar the relative velocity is 0 until the confidence
             # gets high. So even a small negative number here gives constant
@@ -537,13 +544,15 @@ class PCCController(object):
           # case, don't fight the extra velocity unless necessary.
           if (actual_speed_kph > new_speed_kph) and (min_kph < actual_speed_kph < max_kph) and (lead_absolute_speed_kph > 30):
             new_speed_kph = actual_speed_kph
-
+          # BB do not change for small changes
+          if abs(actual_speed_kph - new_speed_kph) < 1.5:
+            new_speed_kph = actual_speed_kph
           new_speed_kph =  clip(new_speed_kph, min_kph, max_kph)
         #BB we can't brake below 5MPH
         if (lead_absolute_speed_kph < 5):
           new_speed_kph = MIN_PCC_V_KPH
         # Enforce limits on speed in the presence of a lead car.
-        new_speed_kph = min(new_speed_kph,
+        new_speed_kph2 = min(new_speed_kph,
                             _max_safe_speed_kph(lead_dist_m),
                             lead_absolute_speed_kph - _min_safe_vrel_kph(lead_dist_m))
 
@@ -614,18 +623,35 @@ def _accel_limit_multiplier(v_ego, lead):
   """Limits acceleration in the presence of a lead car. The further the lead car
   is, the more accel is allowed. Range: 0 to 1, so that it can be multiplied
   with other accel limits."""
+  accel_by_speed = OrderedDict([
+      # (speed m/s, decel)
+      (0.,  3.0),  #  0 MPH
+      (10., 1.0),  # 22 MPH
+      (20., 0.7),  # 45 MPH
+      (30., 0.7)]) # 67 MPH
+  accel_mult = _interp_map(v_ego, accel_by_speed)
   if _is_present(lead):
     safe_dist_m = _safe_distance_m(v_ego)
     accel_multipliers = OrderedDict([
       # (distance in m, acceleration fraction)
-      (0.6 * safe_dist_m, 0.0),
-      (1.0 * safe_dist_m, 0.3),
-      (3.0 * safe_dist_m, 0.4)])
-    return _interp_map(lead.dRel, accel_multipliers)
+      (0.6 * safe_dist_m, 0.3),
+      (1.0 * safe_dist_m, 0.4),
+      (3.0 * safe_dist_m, 0.7)])
+    return accel_mult * _interp_map(lead.dRel, accel_multipliers)
   else:
-    return 0.4
+    return accel_mult * 0.4
 
-def _decel_limit_multiplier(v_ego, lead, CS):
+def _decel_limit_multiplier(v_ego, v_target, lead, CS):
+  #define % change needed
+  speed_delta_perc = 100 * (v_ego - v_target)/v_ego
+  decel_perc_map = OrderedDict([
+      # (perc change, decel)
+      (0., 1.),
+      (10., 1.),
+      (20., 1.2),
+      (30., 2.0),
+      (50., 4.0)])
+  decel_mult = _interp_map(speed_delta_perc, decel_perc_map)
   if _is_present(lead):
     if lead.dRel < MIN_SAFE_DIST_M:
       return 10.
@@ -633,12 +659,18 @@ def _decel_limit_multiplier(v_ego, lead, CS):
       # (sec to collision, decel)
       (0, 10.0),
       (4, 1.0),
-      (7, 0.65),
+      (7, 0.5),
       (10, 0.3)])
-    return _interp_map(_sec_til_collision(lead, CS), decel_map)
+    decel_speed_map = OrderedDict([
+      # (m/s, decel)
+      (0, 10.0),
+      (4, 5.0),
+      (7, 2.50),
+      (10, 1.0)])
+    return decel_mult * _interp_map(_sec_til_collision(lead, CS), decel_map) * _interp_map(v_ego, decel_speed_map)
   else:
     #BB: if we don't have a lead, don't do full regen to slow down smoother
-    return 0.5
+    return decel_mult * 0.3
     
 def _jerk_limits(v_ego, lead, max_speed_kph, lead_last_seen_time_ms, CS):
   # Allow higher accel jerk at low speed, to get started
