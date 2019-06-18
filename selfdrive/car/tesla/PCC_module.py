@@ -5,7 +5,7 @@ from selfdrive.services import service_list
 from selfdrive.car.tesla.values import CruiseState, CruiseButtons
 from selfdrive.config import Conversions as CV
 from selfdrive.controls.lib.speed_smoother import speed_smoother
-from selfdrive.controls.lib.planner import calc_cruise_accel_limits, _DT_MPC
+from selfdrive.controls.lib.planner import calc_cruise_accel_limits
 from common.realtime import sec_since_boot
 import selfdrive.messaging as messaging
 import time
@@ -15,9 +15,8 @@ from collections import OrderedDict
 from common.params import Params
 from selfdrive.car.tesla.movingaverage import MovingAverage
 
-
-_DT = 0.05    # 20Hz in our case, since we don't want to process more than once the same radarState message
-
+_DT = 0.1    # 10Hz in our case, since we don't want to process more than once the same radarState message
+_DT_MPC = _DT
 
 # TODO: these should end up in values.py at some point, probably variable by trim
 # Accel limits
@@ -387,9 +386,8 @@ class PCCController(object):
         self.acc_start_time = cur_time
 
         # Interpolation of trajectory
-        dt = 0.05 #BB- Changed in planner.py min(cur_time - self.acc_start_time, _DT_MPC + _DT) + _DT  # no greater than dt mpc + dt, to prevent too high extraps
-        self.a_acc_sol = self.a_acc_start + (dt / _DT_MPC) * (self.a_acc - self.a_acc_start)
-        self.v_acc_sol = self.v_acc_start + dt * (self.a_acc_sol + self.a_acc_start) / 2.0
+        self.a_acc_sol = self.a_acc_start + (_DT / _DT_MPC) * (self.a_acc - self.a_acc_start)
+        self.v_acc_sol = self.v_acc_start + _DT * (self.a_acc_sol + self.a_acc_start) / 2.0
 
 
         self.v_acc_start = self.v_acc_sol
