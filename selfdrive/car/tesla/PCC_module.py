@@ -516,16 +516,17 @@ class PCCController(object):
           # Force speed into a band that is generally slower than lead if too
           # close, and faster than lead if too far. Allow a range of speeds at
           # any given distance, to prevent continuous jerky adjustments.
+          # BB band should be % of v_ego
           min_vrel_kph_map = OrderedDict([
             # (distance in m, min allowed relative kph)
-            (0.5 * safe_dist_m, 2),
-            (1.0 * safe_dist_m, -2),
-            (1.5 * safe_dist_m, -9),
-            (3.0 * safe_dist_m, -25)])
+            (0.5 * safe_dist_m, 3),
+            (1.0 * safe_dist_m, -2 - 0.1 * CS.v_ego),
+            (1.5 * safe_dist_m, -4  - 0.2 * CS.v_ego),
+            (3.0 * safe_dist_m, -10 - 0.5 * CS.v_ego)])
           min_vrel_kph = _interp_map(lead_dist_m, min_vrel_kph_map)
           max_vrel_kph_map = OrderedDict([
             # (distance in m, max allowed relative kph)
-            (0.5 * safe_dist_m, 8),
+            (0.5 * safe_dist_m, 3),
             (1.0 * safe_dist_m, 2),
             (1.5 * safe_dist_m, 0),
             # With visual radar the relative velocity is 0 until the confidence
@@ -552,8 +553,8 @@ class PCCController(object):
             new_speed_kph = (actual_speed_kph + new_speed_kph)/2.0
         # Enforce limits on speed in the presence of a lead car.
         new_speed_kph = min(new_speed_kph,
-                            _max_safe_speed_kph(lead_dist_m),
-                            max(lead_absolute_speed_kph - _min_safe_vrel_kph(lead_dist_m),2))
+                            _max_safe_speed_kph(self.lead_1,CS),
+                            max(lead_absolute_speed_kph - _min_safe_vrel_kph(self.lead_1,CS),2))
 
       # Enforce limits on speed
       new_speed_kph = clip(new_speed_kph, MIN_PCC_V_KPH, MAX_PCC_V_KPH)
@@ -589,15 +590,21 @@ def _visual_radar_adjusted_dist_m(m, CS):
 def _safe_distance_m(v_ego_ms):
   return max(FOLLOW_TIME_S * (v_ego_ms+1), MIN_SAFE_DIST_M)
 
-def _max_safe_speed_kph(m):
-  return CV.MS_TO_KPH * m / FOLLOW_TIME_S
+def _max_safe_speed_kph(lead,CS):
+  if (lead.vRel > 1) and (lead.dRel < _safe_distance_m(CS.v_ego)):
+    return (CS.v_ego + lead.vRel + lead.dRel/_safe_distance_m(CS.v_ego)) * CV.MS_TO_KPH
+  return CV.MS_TO_KPH * lead.dRel / FOLLOW_TIME_S
   
-def _min_safe_vrel_kph(m):
+def _min_safe_vrel_kph(lead,CS):
+  m = lead.dRel
+  #BB if lead accelerating do not use this for limit, we have other consutions
+  if (lead.dRel <  _safe_distance_m(CS.v_ego)) and (lead.vRel > 1):
+    return -1
   min_vrel_by_distance = OrderedDict([
     # (meters, safe relative velocity in kph)
     # Remember, a negative relative velocity means we are closing the distance.
     (MIN_SAFE_DIST_M, 1),    # If lead is close, it better be pulling away.
-    (100,             -15)]) # if lead is far, it's ok if we're closing.
+    (100,             -35)]) # if lead is far, it's ok if we're closing.
   return _interp_map(m, min_vrel_by_distance)
 
 def _is_present(lead):
