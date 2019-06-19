@@ -553,7 +553,7 @@ class PCCController(object):
         # Enforce limits on speed in the presence of a lead car.
         new_speed_kph = min(new_speed_kph,
                             _max_safe_speed_kph(lead_dist_m),
-                            max(lead_absolute_speed_kph - _min_safe_vrel_kph(lead_dist_m),10))
+                            max(lead_absolute_speed_kph - _min_safe_vrel_kph(lead_dist_m),2))
 
       # Enforce limits on speed
       new_speed_kph = clip(new_speed_kph, MIN_PCC_V_KPH, MAX_PCC_V_KPH)
