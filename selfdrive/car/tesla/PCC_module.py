@@ -486,15 +486,15 @@ class PCCController(object):
       lead_dist_m = _visual_radar_adjusted_dist_m(self.lead_1.dRel, CS)
     # Grab the relative speed.
     rel_speed_kph = 0.
-    if self.had_lead:
+    #if self.had_lead:
       #avoid inital break when lead just detected
-      self.vRel = 0.
-      self.aRel = 0.
-      if abs(self.lead_1.vRel) > 1:
-        self.vRel = self.lead_1.vRel
-      if abs(self.lead_1.aRel) > 1:
-        self.aRel = self.lead_1.aRel
-      rel_speed_kph = (self.vRel + FOLLOW_TIME_S * self.aRel) * CV.MS_TO_KPH
+    self.vRel = 0.
+    self.aRel = 0.
+    if abs(self.lead_1.vRel) > .5:
+      self.vRel = self.lead_1.vRel
+    if abs(self.lead_1.aRel) > .5:
+      self.aRel = self.lead_1.aRel
+    rel_speed_kph = (self.vRel + FOLLOW_TIME_S * self.aRel) * CV.MS_TO_KPH
     # v_ego is in m/s, so safe_distance is in meters.
     safe_dist_m = _safe_distance_m(CS.v_ego)
     # Current speed in kph
@@ -544,17 +544,16 @@ class PCCController(object):
           # case, don't fight the extra velocity unless necessary.
           if (actual_speed_kph > new_speed_kph) and (min_kph < actual_speed_kph < max_kph) and (lead_absolute_speed_kph > 30):
             new_speed_kph = actual_speed_kph
-          # BB do not change for small changes
-          if abs(actual_speed_kph - new_speed_kph) < 1.5:
-            new_speed_kph = actual_speed_kph
+          # BB do not change  nore than 1/2 for small changes
           new_speed_kph =  clip(new_speed_kph, min_kph, max_kph)
-        #BB we can't brake below 5MPH
-        if (lead_absolute_speed_kph < 5):
-          new_speed_kph = MIN_PCC_V_KPH
+          if new_speed_kph > actual_speed_kph:
+            new_speed_kph = (actual_speed_kph + new_speed_kph)/2.0
+          if (actual_speed_kph > 30) and abs(actual_speed_kph - new_speed_kph) < 5.:
+            new_speed_kph = (actual_speed_kph + new_speed_kph)/2.0
         # Enforce limits on speed in the presence of a lead car.
-        new_speed_kph2 = min(new_speed_kph,
+        new_speed_kph = min(new_speed_kph,
                             _max_safe_speed_kph(lead_dist_m),
-                            lead_absolute_speed_kph - _min_safe_vrel_kph(lead_dist_m))
+                            max(lead_absolute_speed_kph - _min_safe_vrel_kph(lead_dist_m),10))
 
       # Enforce limits on speed
       new_speed_kph = clip(new_speed_kph, MIN_PCC_V_KPH, MAX_PCC_V_KPH)
