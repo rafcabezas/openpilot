@@ -338,7 +338,7 @@ class PCCController(object):
     v_ego = CS.v_ego
     following = self.lead_1.status and self.lead_1.dRel < 45.0 and self.lead_1.vLeadK > v_ego and self.lead_1.aLeadK > 0.0
     accel_limits = [float(x) for x in calc_cruise_accel_limits(v_ego, following)]
-    accel_limits[1] *= _accel_limit_multiplier(CS.v_ego, self.lead_1)
+    accel_limits[1] *= _accel_limit_multiplier(CS, self.lead_1)
     #accel_limits[0] *= _decel_limit_multiplier(CS.v_ego, self.lead_1, CS)
     jerk_limits = [min(-0.1, accel_limits[0]/2.), max(0.1, accel_limits[1]/3.)]  # TODO: make a separate lookup for jerk tuning
     #accel_limits = limit_accel_in_turns(v_ego, CS.angle_steers, accel_limits, CS.CP)
@@ -618,19 +618,26 @@ def _interp_map(val, val_map):
   this easier to read than interp, which takes two arrays."""
   return interp(val, val_map.keys(), val_map.values())
   
-def _accel_limit_multiplier(v_ego, lead):
+def _accel_limit_multiplier(CS, lead):
   """Limits acceleration in the presence of a lead car. The further the lead car
   is, the more accel is allowed. Range: 0 to 1, so that it can be multiplied
   with other accel limits."""
   accel_by_speed = OrderedDict([
-      # (speed m/s, decel)
-      (0.,  3.0),  #  0 MPH
-      (10., 1.0),  # 22 MPH
-      (20., 0.7),  # 45 MPH
-      (30., 0.7)]) # 67 MPH
-  accel_mult = _interp_map(v_ego, accel_by_speed)
+    # (speed m/s, decel)
+    (0.,  2.0),  #  0 MPH
+    (10., 1.0),  # 22 MPH
+    (20., 0.7),  # 45 MPH
+    (30., 0.7)]) # 67 MPH
+  if CS.teslaModel in ["SP","SPD"]:
+      accel_by_speed = OrderedDict([
+        # (speed m/s, decel)
+        (0.,  1.0),  #  0 MPH
+        (10., 0.8),  # 22 MPH
+        (20., 0.5),  # 45 MPH
+        (30., 0.5)]) # 67 MPH
+  accel_mult = _interp_map(CS.v_ego, accel_by_speed)
   if _is_present(lead):
-    safe_dist_m = _safe_distance_m(v_ego)
+    safe_dist_m = _safe_distance_m(CS.v_ego)
     accel_multipliers = OrderedDict([
       # (distance in m, acceleration fraction)
       (0.6 * safe_dist_m, 0.3),
