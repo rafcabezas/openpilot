@@ -37,6 +37,8 @@ FOLLOW_TIME_S = 1.5  # defined by CS.apFollowDistance
 MIN_PCC_V_KPH = 0. #
 MAX_PCC_V_KPH = 170.
 
+ANGLE_STOP_ACCEL = 10.
+
 MIN_CAN_SPEED = 0.3  #TODO: parametrize this in car interface
 
 # Pull the cruise stalk twice in this many ms for a 'double pull'
@@ -476,7 +478,8 @@ class PCCController(object):
 
   # function to calculate the cruise speed based on a safe follow distance
   def calc_follow_speed_ms(self, CS):
-     # Make sure we were able to populate lead_1.
+    # Make sure we were able to populate lead_1.
+    lead_dist_m = 0.
     if self.lead_1 is None:
       return None, None, None
     # dRel is in meters.
@@ -519,10 +522,10 @@ class PCCController(object):
           # BB band should be % of v_ego
           min_vrel_kph_map = OrderedDict([
             # (distance in m, min allowed relative kph)
-            (0.5 * safe_dist_m, 3),
-            (1.0 * safe_dist_m, -2 - 0.1 * CS.v_ego),
-            (1.5 * safe_dist_m, -4  - 0.2 * CS.v_ego),
-            (3.0 * safe_dist_m, -10 - 0.5 * CS.v_ego)])
+            (0.5 * safe_dist_m, 1),
+            (1.0 * safe_dist_m, -2 - 0.1 * CS.v_ego * CV.MS_TO_KPH),
+            (1.5 * safe_dist_m, -4  - 0.2 * CS.v_ego * CV.MS_TO_KPH),
+            (3.0 * safe_dist_m, -10 - 0.4 * CS.v_ego * CV.MS_TO_KPH)])
           min_vrel_kph = _interp_map(lead_dist_m, min_vrel_kph_map)
           max_vrel_kph_map = OrderedDict([
             # (distance in m, max allowed relative kph)
@@ -549,19 +552,19 @@ class PCCController(object):
           new_speed_kph =  clip(new_speed_kph, min_kph, max_kph)
           if new_speed_kph > actual_speed_kph:
             new_speed_kph = (actual_speed_kph + new_speed_kph)/2.0
-          if (actual_speed_kph > 30) and abs(actual_speed_kph - new_speed_kph) < 5.:
+          elif (actual_speed_kph > 30) and abs(actual_speed_kph - new_speed_kph) < 5.:
             new_speed_kph = (actual_speed_kph + new_speed_kph)/2.0
-        # Enforce limits on speed in the presence of a lead car.
-        new_speed_kph = min(new_speed_kph,
-                            _max_safe_speed_kph(self.lead_1,CS),
-                            max(lead_absolute_speed_kph - _min_safe_vrel_kph(self.lead_1,CS),2))
-
+          # Enforce limits on speed in the presence of a lead car.
+          new_speed_kph = min(new_speed_kph,
+                              _max_safe_speed_kph(self.lead_1,CS),
+                              max(lead_absolute_speed_kph - _min_safe_vrel_kph(self.lead_1,CS),2))
       # Enforce limits on speed
       new_speed_kph = clip(new_speed_kph, MIN_PCC_V_KPH, MAX_PCC_V_KPH)
       new_speed_kph = clip(new_speed_kph, MIN_PCC_V_KPH, self.pedal_speed_kph)
-      if CS.blinker_on:
-        # Don't accelerate during manual turns.
+      if CS.blinker_on or (abs(CS.angle_steers) > ANGLE_STOP_ACCEL):
+        # Don't accelerate during manual turns, curves or ALCA.
         new_speed_kph = min(new_speed_kph, self.last_speed_kph)
+    #BB Last safety check. Zero if below MIN_SAFE_DIST_M
     if (lead_dist_m > 0) and (lead_dist_m < MIN_SAFE_DIST_M):
       new_speed_kph = MIN_PCC_V_KPH
     self.last_speed_kph = new_speed_kph
@@ -591,14 +594,14 @@ def _safe_distance_m(v_ego_ms):
   return max(FOLLOW_TIME_S * (v_ego_ms+1), MIN_SAFE_DIST_M)
 
 def _max_safe_speed_kph(lead,CS):
-  if (lead.vRel > 1) and (lead.dRel < _safe_distance_m(CS.v_ego)):
-    return (CS.v_ego + lead.vRel + lead.dRel/_safe_distance_m(CS.v_ego)) * CV.MS_TO_KPH
+  if (lead.vRel > 0) and (lead.dRel < _safe_distance_m(CS.v_ego)):
+    return (CS.v_ego + lead.vRel + 2 * lead.dRel/_safe_distance_m(CS.v_ego)) * CV.MS_TO_KPH
   return CV.MS_TO_KPH * lead.dRel / FOLLOW_TIME_S
   
 def _min_safe_vrel_kph(lead,CS):
   m = lead.dRel
   #BB if lead accelerating do not use this for limit, we have other consutions
-  if (lead.dRel <  _safe_distance_m(CS.v_ego)) and (lead.vRel > 1):
+  if (lead.dRel < 0.5 * _safe_distance_m(CS.v_ego)) and (lead.vRel > 0):
     return -1
   min_vrel_by_distance = OrderedDict([
     # (meters, safe relative velocity in kph)
