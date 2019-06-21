@@ -513,7 +513,13 @@ class PCCController(object):
       elif lead_dist_m > 0:
         self.had_lead = True
         lead_absolute_speed_kph = self.lead_1.vLeadK * CV.MS_TO_KPH #actual_speed_kph + rel_speed_kph
-        if lead_dist_m < MIN_SAFE_DIST_M:
+        if lead_dist_m < MIN_SAFE_DIST_M and rel_speed_kph > 3:
+        # If lead is going faster, but we're not at a safe distance, hold 
+        # speed and let the lead car move father away from us
+          new_speed_kph = actual_speed_kph
+        # If lead is not going faster than 3kpm from us, lets slow down a
+        # bit to get him moving faster relative to us
+        elif lead_dist_m < MIN_SAFE_DIST_M:
           new_speed_kph = MIN_PCC_V_KPH
         else:
           # Force speed into a band that is generally slower than lead if too
