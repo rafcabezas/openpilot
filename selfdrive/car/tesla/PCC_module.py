@@ -343,7 +343,7 @@ class PCCController(object):
     accel_limits = [float(x) for x in calc_cruise_accel_limits(v_ego, following)]
     accel_limits[1] *= _accel_limit_multiplier(CS, self.lead_1)
     accel_limits[0] = _decel_limit(accel_limits[0], CS.v_ego, self.lead_1, CS)
-    jerk_limits = [min(-0.1, accel_limits[0]/2.), max(0.1, accel_limits[1]/3.)]  # TODO: make a separate lookup for jerk tuning
+    jerk_limits = [min(-0.1, accel_limits[0]/2.), max(0.1, accel_limits[1]/2.)]  # TODO: make a separate lookup for jerk tuning
     #accel_limits = limit_accel_in_turns(v_ego, CS.angle_steers, accel_limits, CS.CP)
 
     output_gb = 0
@@ -451,7 +451,7 @@ class PCCController(object):
 
     self.last_output_gb = output_gb
     # accel and brake
-    apply_accel = clip(output_gb, 0., accel_limits[1])
+    apply_accel = clip(output_gb, 0., _accel_pedal_max(CS.v_ego, self.v_pid, self.lead_1, self.prev_tesla_accel, CS))
     MPC_BRAKE_MULTIPLIER = 6.
     apply_brake = -clip(output_gb * MPC_BRAKE_MULTIPLIER, _brake_pedal_min(CS.v_ego, self.v_pid, self.lead_1, CS), 0.)
 
@@ -525,8 +525,14 @@ class PCCController(object):
         elif lead_dist_m < MIN_SAFE_DIST_M:
           new_speed_kph = MIN_PCC_V_KPH
         # In a 10 meter cruise zone, lets match the car in front 
-        elif lead_dist_m > MIN_SAFE_DIST_M and lead_dist_m < MIN_SAFE_DIST_M + 10: # BB we might want to try this and rel_speed_kph > 0: 
-          new_speed_kph = lead_absolute_speed_kph
+        elif lead_dist_m > MIN_SAFE_DIST_M and lead_dist_m < safe_dist_m + 2: # BB we might want to try this and rel_speed_kph > 0: 
+          min_vrel_kph_map = OrderedDict([
+            # (distance in m, min allowed relative kph)
+            (0.5 * safe_dist_m, 3.0),
+            (0.8 * safe_dist_m, 2.0),
+            (1.0 * safe_dist_m, 0.0)])
+          min_vrel_kph = _interp_map(lead_dist_m, min_vrel_kph_map)
+          new_speed_kph = lead_absolute_speed_kph - min_vrel_kph
         else:
           # Force speed into a band that is generally slower than lead if too
           # close, and faster than lead if too far. Allow a range of speeds at
@@ -625,7 +631,7 @@ def _min_safe_vrel_kph(lead,CS,actual_speed_kph):
   return _interp_map(m, min_vrel_by_distance)
 
 def _is_present(lead):
-  return bool(lead and lead.dRel)
+  return bool((not (lead is None)) and (lead.dRel > 0))
 
 def _sec_til_collision(lead, CS):
   if _is_present(lead) and lead.vRel < 0:
@@ -700,6 +706,35 @@ def _decel_limit(accel_min,v_ego, lead, CS):
   else:
     #BB: if we don't have a lead, don't do full regen to slow down smoother
     return accel_min * 0.5 
+
+def _accel_pedal_max(v_ego, v_target, lead, prev_tesla_accel,CS):
+  pedal_max = prev_tesla_accel
+  if _is_present(lead):
+    #we have lead, base on speed and distance
+    safe_dist_m = _safe_distance_m(CS.v_ego)
+    v_rel = lead.vLeadK - v_ego
+    accel_speed_map = OrderedDict([
+      # (speed m/s, decel) change in accel (0..1) per second
+      (0.,  0.01),  #  0 MPH 
+      (1., 0.1),   # 4 MPH
+      (5., 0.15),  # 11 MPH
+      (30., 0.20)]) # 67 MPH
+    accel_distance_map = OrderedDict([
+      # (distance in m, acceleration fraction)
+      (0.6 * safe_dist_m, 0.3),
+      (1.0 * safe_dist_m, 1.0),
+      (3.0 * safe_dist_m, 2.0)])
+    pedal_max = prev_tesla_accel + _interp_map(safe_dist_m, accel_distance_map) * _interp_map(v_rel, accel_speed_map) * _DT
+  else:
+    #no lead, do just based on speed
+    accel_speed_map = OrderedDict([
+      # (speed m/s, decel) change in accel (0..1) per second
+      (0.,  0.25),  #  0 MPH 
+      (10., 0.15),  # 22 MPH
+      (20., 0.12),  # 45 MPH
+      (30., 0.10)]) # 67 MPH
+    pedal_max = prev_tesla_accel +  _interp_map(v_ego, accel_speed_map) * _DT
+  return 1. #pedal_max
 
 def _brake_pedal_min(v_ego, v_target, lead, CS):
   #define % change needed

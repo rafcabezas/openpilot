@@ -10,10 +10,12 @@ NO_FUSION_SCORE = 100 # bad default fusion score
 # radar tracks
 SPEED, ACCEL = 0, 1   # Kalman filter states enum
 
-rate, ratev = 20., 20.    # model and radar are both at 20Hz
+rate, ratev = 10., 10.    # model and radar are both at 20Hz #BB changed to 10 from 20.
 ts = 1./rate
 freq_v_lat = 0.2 # Hz
 k_v_lat = 2*np.pi*freq_v_lat*ts / (1 + 2*np.pi*freq_v_lat*ts)
+
+
 
 freq_a_lead = .5 # Hz
 k_a_lead = 2*np.pi*freq_a_lead*ts / (1 + 2*np.pi*freq_a_lead*ts)
@@ -32,9 +34,6 @@ _VLEAD_C = [1.0, 0.0]
 _VLEAD_K = [[ 0.1988689 ], [ 0.28555364]]
 
 RDR_TO_LDR = 2.7
-if CarSettings().get_value("useTeslaRadar"):
-  RDR_TO_LDR = 0.
-
 
 class Track(object):
   def __init__(self):
@@ -42,7 +41,7 @@ class Track(object):
     self.stationary = True
     self.initted = False
 
-  def update(self, d_rel, y_rel, v_rel,measured, a_rel, vy_rel, oClass, length, track_id,d_path, v_ego_t_aligned, steer_override):
+  def update(self, d_rel, y_rel, v_rel,measured, a_rel, vy_rel, oClass, length, track_id,movingState, d_path, v_ego_t_aligned, steer_override):
     if self.initted:
       # pylint: disable=access-member-before-definition
       self.dPathPrev = self.dPath
@@ -59,6 +58,7 @@ class Track(object):
     self.length = length #length
     self.measured = measured   # measured or estimate
     self.track_id = track_id
+    #self.stationary = (movingState == 3)
 
     # compute distance to path
     self.dPath = d_path
@@ -95,7 +95,7 @@ class Track(object):
     self.vLeadK = float(self.kf.x[SPEED][0])
     self.aLeadK = float(self.kf.x[ACCEL][0])
 
-    if self.stationary:
+    if self.stationary  and (v_ego_t_aligned > v_ego_stationary): #0 is unknown for Tesla radar
       # stationary objects can become non stationary, but not the other way around
       self.stationary = v_ego_t_aligned > v_ego_stationary and abs(self.vLead) < v_stationary_thr
     self.oncoming = self.vLead < v_oncoming_thr
@@ -138,6 +138,8 @@ def mean(l):
 class Cluster(object):
   def __init__(self):
     self.tracks = set()
+    #BB frame delay for dRel calculation, in seconds
+    self.frame_delay = 1.0
 
   def add(self, t):
     # add the first track
@@ -217,8 +219,9 @@ class Cluster(object):
     return mean([t.track_id for t in self.tracks])
 
   def toRadarState(self):
+    dRel_delta_estimate =  0. #(self.vRel + self.aRel * self.frame_delay / 2.) * self.frame_delay
     return {
-      "dRel": float(self.dRel) - RDR_TO_LDR,
+      "dRel": float(self.dRel + dRel_delta_estimate) - RDR_TO_LDR,
       "yRel": float(self.yRel),
       "vRel": float(self.vRel),
       "aRel": float(self.aRel),

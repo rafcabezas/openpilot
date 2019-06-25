@@ -95,7 +95,7 @@ def radard_thread(gctx=None):
   # Time-alignment
   rate = 10.   # model and radar are both at 20Hz
   tsv = 1./rate
-  v_len = 20         # how many speed data points to remember for t alignment with rdr data
+  v_len = 10         # how many speed data points to remember for t alignment with rdr data
 
   active = 0
   steer_angle = 0.
@@ -119,7 +119,7 @@ def radard_thread(gctx=None):
 
     ar_pts = {}
     for pt in rr.points:
-      ar_pts[pt.trackId] = [pt.dRel + RDR_TO_LDR, pt.yRel, pt.vRel, pt.measured, pt.aRel, pt.yvRel, pt.objectClass, pt.length, pt.trackId+2]
+      ar_pts[pt.trackId] = [pt.dRel + RDR_TO_LDR, pt.yRel, pt.vRel, pt.measured, pt.aRel, pt.yvRel, pt.objectClass, pt.length, pt.trackId+2, pt.movingState]
 
     # receive the controlsStates
     controls_state = None
@@ -211,7 +211,7 @@ def radard_thread(gctx=None):
       # create the track if it doesn't exist or it's a new track
       if ids not in tracks:
         tracks[ids] = Track()
-      tracks[ids].update(rpt[0], rpt[1], rpt[2], rpt[3], rpt[4],rpt[5],rpt[6],rpt[7],rpt[8],d_path, v_ego_t_aligned, steer_override)
+      tracks[ids].update(rpt[0], rpt[1], rpt[2], rpt[3], rpt[4],rpt[5],rpt[6],rpt[7],rpt[8],rpt[9],d_path, v_ego_t_aligned, steer_override)
 
     # allow the vision model to remove the stationary flag if distance and rel speed roughly match
     if VISION_POINT in ar_pts:
@@ -243,7 +243,7 @@ def radard_thread(gctx=None):
 
     # If we have multiple points, cluster them
     if len(track_pts) > 1:
-      cluster_idxs = cluster_points_centroid(track_pts, 2.5)
+      cluster_idxs = cluster_points_centroid(track_pts, 0.01) #2.5)
       clusters = [None] * (max(cluster_idxs) + 1)
 
       for idx in xrange(len(track_pts)):
