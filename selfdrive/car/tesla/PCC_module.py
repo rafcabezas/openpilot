@@ -521,6 +521,9 @@ class PCCController(object):
         # bit to get him moving faster relative to us
         elif lead_dist_m < MIN_SAFE_DIST_M:
           new_speed_kph = MIN_PCC_V_KPH
+        # In a 10 meter cruise zone, lets match the car in front 
+        elif lead_dist_m > MIN_SAFE_DIST_M and lead_dist_m < MIN_SAFE_DIST_M + 10: 
+          new_speed_kph = lead_absolute_speed_kph 
         else:
           # Force speed into a band that is generally slower than lead if too
           # close, and faster than lead if too far. Allow a range of speeds at
