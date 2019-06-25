@@ -1726,8 +1726,11 @@ static void tesla_fwd_to_radar_modded(int bus_num, CAN_FIFOMailBox_TypeDef *to_f
     if (speed_kph < 0) {
       speed_kph = 0;
     }
-    //speed_kph = 20; //force it at 20 kph for debug
-    speed_kph = (int)(speed_kph/0.04) & 0x1FFF;
+    if (((0xFFF0000 & to_send.RDLR) >> 16) == 0xFFF) {
+      speed_kph = 0x1FFF; //0xFFF is signal not available for DI_Torque2 speed 0x118; should be SNA or 0x1FFF for 0x169
+    } else {
+      speed_kph = (int)(speed_kph/0.04) & 0x1FFF;
+    }
     to_send.RDLR = (speed_kph | (speed_kph << 13) | (speed_kph << 26)) & 0xFFFFFFFF;
     to_send.RDHR = ((speed_kph  >> 6) | (speed_kph << 7) | (counter << 20)) & 0x00FFFFFF;
     int cksm = 0x76;
@@ -1736,7 +1739,7 @@ static void tesla_fwd_to_radar_modded(int bus_num, CAN_FIFOMailBox_TypeDef *to_f
     to_send.RDHR = to_send.RDHR | (cksm << 24);
     can_send(&to_send, bus_num);
 
-    to_send.RIR = (0x175 << 21) + (addr_mask & (to_fwd->RIR | 1));
+    //to_send.RIR = (0x175 << 21) + (addr_mask & (to_fwd->RIR | 1));
     //can_send(&to_send, 0);
     
     return;

@@ -2,6 +2,7 @@ import numpy as np
 
 from common.numpy_fast import clip, interp
 from common.kalman.simple_kalman import KF1D
+from selfdrive.car.tesla.readconfig import CarSettings
 
 _LEAD_ACCEL_TAU = 1.5
 NO_FUSION_SCORE = 100 # bad default fusion score
@@ -31,6 +32,8 @@ _VLEAD_C = [1.0, 0.0]
 _VLEAD_K = [[ 0.1988689 ], [ 0.28555364]]
 
 RDR_TO_LDR = 2.7
+if CarSettings().get_value("useTeslaRadar"):
+  RDR_TO_LDR = 0.
 
 
 class Track(object):
