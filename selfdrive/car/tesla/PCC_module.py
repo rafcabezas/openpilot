@@ -673,9 +673,9 @@ def _accel_limit_multiplier(CS, lead):
       (0.6 * safe_dist_m, 0.3),
       (1.0 * safe_dist_m, 0.4),
       (3.0 * safe_dist_m, 0.7)])
-    return accel_mult * _interp_map(lead.dRel, accel_multipliers)
+    return min(accel_mult * _interp_map(lead.dRel, accel_multipliers),1.0)
   else:
-    return accel_mult * 0.4
+    return min(accel_mult * 0.4,1.0)
 
 def _decel_limit(accel_min,v_ego, lead, CS):
   if _is_present(lead):
@@ -688,7 +688,7 @@ def _decel_limit(accel_min,v_ego, lead, CS):
       # going slower AND decelerating
       time_to_brake = _sec_til_collision(lead, CS)
       if time_to_brake == 0:
-        accel_to_compensate = 0.
+        accel_to_compensate = 1.
       else:
         accel_to_compenesate = 1.5 * (v_ego - lead.vLeadK) / time_to_brake
       return lead.aLeadK - accel_to_compenesate
