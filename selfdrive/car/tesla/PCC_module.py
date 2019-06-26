@@ -671,12 +671,12 @@ def _accel_limit_multiplier(CS, lead):
     safe_dist_m = _safe_distance_m(CS.v_ego)
     accel_multipliers = OrderedDict([
       # (distance in m, acceleration fraction)
-      (0.6 * safe_dist_m, 0.3),
-      (1.0 * safe_dist_m, 0.4),
+      (0.6 * safe_dist_m, 0.15),
+      (1.0 * safe_dist_m, 0.2),
       (3.0 * safe_dist_m, 0.7)])
     return min(accel_mult * _interp_map(lead.dRel, accel_multipliers),1.0)
   else:
-    return min(accel_mult * 0.4, 1.0)
+    return min(accel_mult * 0.5, 1.0)
 
 def _decel_limit(accel_min,v_ego, lead, CS):
   if _is_present(lead):
@@ -751,11 +751,19 @@ def _brake_pedal_min(v_ego, v_target, lead, CS, max_speed_kph):
   decel_perc_map = OrderedDict([
       # (perc change, decel)
       (0., 0.3),
-      (10., 0.5),
-      (20., 0.8),
-      (30., 1.0),
+      (5., 0.5),
+      (10., 0.8),
+      (15., 1.0),
       (50., 1.0)])
   decel_mult = _interp_map(speed_delta_perc, decel_perc_map)
+  if _is_present(lead):
+    safe_dist_m = _safe_distance_m(CS.v_ego)
+    brake_multipliers = OrderedDict([
+      # (distance in m, decceleration fraction)
+      (0.6 * safe_dist_m, 4.),
+      (1.0 * safe_dist_m, 2.),
+      (3.0 * safe_dist_m, 1.)])
+    decel_mult = max(decel_mult * _interp_map(lead.dRel, brake_multipliers),-1.0)
   return -decel_mult
     
 def _jerk_limits(v_ego, lead, max_speed_kph, lead_last_seen_time_ms, CS):
