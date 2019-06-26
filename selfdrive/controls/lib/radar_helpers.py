@@ -10,7 +10,7 @@ NO_FUSION_SCORE = 100 # bad default fusion score
 # radar tracks
 SPEED, ACCEL = 0, 1   # Kalman filter states enum
 
-rate, ratev = 10., 10.    # model and radar are both at 20Hz #BB changed to 10 from 20.
+rate, ratev = 20., 20.    # model and radar are both at 20Hz #BB changed to 10 from 20.
 ts = 1./rate
 freq_v_lat = 0.2 # Hz
 k_v_lat = 2*np.pi*freq_v_lat*ts / (1 + 2*np.pi*freq_v_lat*ts)
@@ -256,9 +256,9 @@ class Cluster(object):
     # also, above 50 meters the predicted path isn't very reliable
 
     # the distance at which v_lat matters is higher at higher speed
-    lookahead_dist = 40. + v_ego/1.2   #40m at 0mph, ~70m at 80mph
+    lookahead_dist = 80. + v_ego/1.2   #40m at 0mph, ~70m at 80mph
 
-    t_lookahead_v  = [1., 0.]
+    t_lookahead_v  = [1., 0.1]
     t_lookahead_bp = [10., lookahead_dist]
 
     # average dist
