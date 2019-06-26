@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from selfdrive.car.tesla import teslacan
 from selfdrive.controls.lib.longcontrol import LongControl, LongCtrlState
 from common.numpy_fast import clip, interp
@@ -453,7 +454,7 @@ class PCCController(object):
     # accel and brake
     apply_accel = clip(output_gb, 0., _accel_pedal_max(CS.v_ego, self.v_pid, self.lead_1, self.prev_tesla_accel, CS))
     MPC_BRAKE_MULTIPLIER = 6.
-    apply_brake = -clip(output_gb * MPC_BRAKE_MULTIPLIER, _brake_pedal_min(CS.v_ego, self.v_pid, self.lead_1, CS), 0.)
+    apply_brake = -clip(output_gb * MPC_BRAKE_MULTIPLIER, _brake_pedal_min(CS.v_ego, self.v_pid, self.lead_1, CS, self.pedal_speed_kph), 0.)
 
     # if speed is over 5mpg, the "zero" is at PedalForZeroTorque; otherwise it is zero
     pedal_zero = 0.
@@ -661,10 +662,10 @@ def _accel_limit_multiplier(CS, lead):
   if CS.teslaModel in ["SP","SPD"]:
       accel_by_speed = OrderedDict([
         # (speed m/s, decel)
-        (0.,  1.0),  #  0 MPH
-        (10., 0.8),  # 22 MPH
-        (20., 0.5),  # 45 MPH
-        (30., 0.5)]) # 67 MPH
+        (0.,  2.5),  #  0 MPH
+        (10., 1.5),  # 22 MPH
+        (20., 1.2),  # 45 MPH
+        (30., 0.7)]) # 67 MPH
   accel_mult = _interp_map(CS.v_ego, accel_by_speed)
   if _is_present(lead):
     safe_dist_m = _safe_distance_m(CS.v_ego)
@@ -675,7 +676,7 @@ def _accel_limit_multiplier(CS, lead):
       (3.0 * safe_dist_m, 0.7)])
     return min(accel_mult * _interp_map(lead.dRel, accel_multipliers),1.0)
   else:
-    return min(accel_mult * 0.4,1.0)
+    return min(accel_mult * 0.4, 1.0)
 
 def _decel_limit(accel_min,v_ego, lead, CS):
   if _is_present(lead):
@@ -690,8 +691,8 @@ def _decel_limit(accel_min,v_ego, lead, CS):
       if time_to_brake == 0:
         accel_to_compensate = 1.
       else:
-        accel_to_compenesate = 1.5 * (v_ego - lead.vLeadK) / time_to_brake
-      return lead.aLeadK - accel_to_compenesate
+        accel_to_compensate = 1.5 * (v_ego - lead.vLeadK) / time_to_brake
+      return lead.aLeadK - accel_to_compensate
     # if we got here, aLeadK >=0 so use the old logic
     decel_map = OrderedDict([
       # (sec to collision, decel)
@@ -739,10 +740,13 @@ def _accel_pedal_max(v_ego, v_target, lead, prev_tesla_accel,CS):
     pedal_max = prev_tesla_accel +  _interp_map(v_ego, accel_speed_map) * _DT
   return 1. #pedal_max
 
-def _brake_pedal_min(v_ego, v_target, lead, CS):
+def _brake_pedal_min(v_ego, v_target, lead, CS, max_speed_kph):
   #define % change needed
   if v_ego == 0.:
     return -1
+  # if above speed limit quickly decel
+  if v_ego * CV.MS_TO_KPH > max_speed_kph:
+    return 0.8
   speed_delta_perc = 100 * (v_ego - v_target)/v_ego
   decel_perc_map = OrderedDict([
       # (perc change, decel)
