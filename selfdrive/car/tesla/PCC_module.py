@@ -687,8 +687,11 @@ def _decel_limit(accel_min,v_ego, lead, CS):
     elif lead.vLeadK <= v_ego and lead.aLeadK < 0:
       # going slower AND decelerating
       time_to_brake = _sec_til_collision(lead, CS)
-      accel_to_companesate = 1.5 * (v_ego - lead.vLeadK) / time_to_brake
-      return lead.aLeadK - accel_to_companesate
+      if time_to_brake == 0:
+        accel_to_compensate = 0.
+      else:
+        accel_to_compenesate = 1.5 * (v_ego - lead.vLeadK) / time_to_brake
+      return lead.aLeadK - accel_to_compenesate
     # if we got here, aLeadK >=0 so use the old logic
     decel_map = OrderedDict([
       # (sec to collision, decel)
