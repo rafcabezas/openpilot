@@ -343,7 +343,7 @@ class PCCController(object):
     following = self.lead_1.status and self.lead_1.dRel < MAX_RADAR_DISTANCE and self.lead_1.vLeadK > v_ego and self.lead_1.aLeadK > 0.0
     accel_limits = [float(x) for x in calc_cruise_accel_limits(v_ego, following)]
     accel_limits[1] *= _accel_limit_multiplier(CS, self.lead_1)
-    accel_limits[0] = _decel_limit(accel_limits[0], CS.v_ego, self.lead_1, CS)
+    accel_limits[0] = _decel_limit(accel_limits[0], CS.v_ego, self.lead_1, CS, self.pedal_speed_kph)
     jerk_limits = [min(-0.1, accel_limits[0]/2.), max(0.1, accel_limits[1]/2.)]  # TODO: make a separate lookup for jerk tuning
     #accel_limits = limit_accel_in_turns(v_ego, CS.angle_steers, accel_limits, CS.CP)
 
@@ -456,7 +456,7 @@ class PCCController(object):
     MPC_BRAKE_MULTIPLIER = 6.
     apply_brake = -clip(output_gb * MPC_BRAKE_MULTIPLIER, _brake_pedal_min(CS.v_ego, self.v_pid, self.lead_1, CS, self.pedal_speed_kph), 0.)
 
-    # if speed is over 5mpg, the "zero" is at PedalForZeroTorque; otherwise it is zero
+    # if speed is over 5mph, the "zero" is at PedalForZeroTorque; otherwise it is zero
     pedal_zero = 0.
     if CS.v_ego >= 5.* CV.MPH_TO_MS:
       pedal_zero = self.PedalForZeroTorque
@@ -678,7 +678,11 @@ def _accel_limit_multiplier(CS, lead):
   else:
     return min(accel_mult * 0.5, 1.0)
 
-def _decel_limit(accel_min,v_ego, lead, CS):
+def _decel_limit(accel_min,v_ego, lead, CS, max_speed_kph):
+  max_speed_mult = 1.
+  # if above speed limit quickly decel
+  if v_ego * CV.MS_TO_KPH > max_speed_kph:
+    max_speed_mult = 2.
   if _is_present(lead):
     if 0 < lead.dRel < MIN_SAFE_DIST_M:
       return -10.
@@ -691,7 +695,7 @@ def _decel_limit(accel_min,v_ego, lead, CS):
       if time_to_brake == 0:
         accel_to_compensate = 1.
       else:
-        accel_to_compensate = 1.5 * (v_ego - lead.vLeadK) / time_to_brake
+        accel_to_compensate = 3 * (v_ego - lead.vLeadK) / time_to_brake
       return lead.aLeadK - accel_to_compensate
     # if we got here, aLeadK >=0 so use the old logic
     decel_map = OrderedDict([
@@ -706,10 +710,10 @@ def _decel_limit(accel_min,v_ego, lead, CS):
       (4, 5.0),
       (7, 2.50),
       (10, 1.0)])
-    return accel_min * _interp_map(_sec_til_collision(lead, CS), decel_map) * _interp_map(v_ego, decel_speed_map)
+    return accel_min * max_speed_mult * _interp_map(_sec_til_collision(lead, CS), decel_map) * _interp_map(v_ego, decel_speed_map)
   else:
     #BB: if we don't have a lead, don't do full regen to slow down smoother
-    return accel_min * 0.5 
+    return accel_min * 0.5 * max_speed_mult
 
 def _accel_pedal_max(v_ego, v_target, lead, prev_tesla_accel,CS):
   pedal_max = prev_tesla_accel
@@ -741,30 +745,31 @@ def _accel_pedal_max(v_ego, v_target, lead, prev_tesla_accel,CS):
   return 1. #pedal_max
 
 def _brake_pedal_min(v_ego, v_target, lead, CS, max_speed_kph):
-  #define % change needed
-  if v_ego == 0.:
+  #if less than 7 MPH we don't have much left till 5MPH to brake, so full regen
+  if v_ego <= 7 * CV.MPH_TO_MS: 
     return -1
   # if above speed limit quickly decel
   if v_ego * CV.MS_TO_KPH > max_speed_kph:
-    return 0.8
+    return -0.8
   speed_delta_perc = 100 * (v_ego - v_target)/v_ego
-  decel_perc_map = OrderedDict([
+  brake_perc_map = OrderedDict([
       # (perc change, decel)
       (0., 0.3),
       (5., 0.5),
       (10., 0.8),
       (15., 1.0),
       (50., 1.0)])
-  decel_mult = _interp_map(speed_delta_perc, decel_perc_map)
+  brake_mult = _interp_map(speed_delta_perc, brake_perc_map)
   if _is_present(lead):
     safe_dist_m = _safe_distance_m(CS.v_ego)
-    brake_multipliers = OrderedDict([
+    brake_distance_map = OrderedDict([
       # (distance in m, decceleration fraction)
-      (0.6 * safe_dist_m, 4.),
+      (0.6 * safe_dist_m, 8.),
       (1.0 * safe_dist_m, 2.),
       (3.0 * safe_dist_m, 1.)])
-    decel_mult = max(decel_mult * _interp_map(lead.dRel, brake_multipliers),-1.0)
-  return -decel_mult
+    brake_mult = brake_mult * _interp_map(lead.dRel, brake_distance_map)
+  brake_mult = min(brake_mult, 1.0)
+  return -brake_mult
     
 def _jerk_limits(v_ego, lead, max_speed_kph, lead_last_seen_time_ms, CS):
   # Allow higher accel jerk at low speed, to get started
