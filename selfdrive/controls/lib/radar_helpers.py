@@ -221,7 +221,7 @@ class Cluster(object):
 
   def toRadarState(self):
     dRel_delta_estimate = 0.
-    if useTeslaRadar:
+    if self.useTeslaRadar:
       dRel_delta_estimate = (self.vRel + self.aRel * self.frame_delay / 2.) * self.frame_delay
     return {
       "dRel": float(self.dRel + dRel_delta_estimate) - RDR_TO_LDR,
@@ -259,9 +259,9 @@ class Cluster(object):
     # also, above 50 meters the predicted path isn't very reliable
 
     # the distance at which v_lat matters is higher at higher speed
-    lookahead_dist = 80. + v_ego/1.2   #40m at 0mph, ~70m at 80mph
+    lookahead_dist = 40. + v_ego/1.2   #40m at 0mph, ~70m at 80mph
 
-    t_lookahead_v  = [1., 0.1]
+    t_lookahead_v  = [1., 0.]
     t_lookahead_bp = [10., lookahead_dist]
 
     # average dist

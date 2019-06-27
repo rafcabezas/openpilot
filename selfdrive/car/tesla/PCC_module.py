@@ -755,9 +755,9 @@ def _brake_pedal_min(v_ego, v_target, lead, CS, max_speed_kph):
   brake_perc_map = OrderedDict([
       # (perc change, decel)
       (0., 0.3),
-      (5., 0.5),
-      (10., 0.8),
-      (15., 1.0),
+      (1.5, 0.5),
+      (5., 0.8),
+      (7777777., 1.0),
       (50., 1.0)])
   brake_mult = _interp_map(speed_delta_perc, brake_perc_map)
   if _is_present(lead):
