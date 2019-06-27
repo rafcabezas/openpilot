@@ -673,10 +673,10 @@ def _accel_limit_multiplier(CS, lead):
       # (distance in m, acceleration fraction)
       (0.6 * safe_dist_m, 0.15),
       (1.0 * safe_dist_m, 0.2),
-      (3.0 * safe_dist_m, 0.7)])
+      (3.0 * safe_dist_m, 0.4)])
     return min(accel_mult * _interp_map(lead.dRel, accel_multipliers),1.0)
   else:
-    return min(accel_mult * 0.5, 1.0)
+    return min(accel_mult * 0.3, 1.0)
 
 def _decel_limit(accel_min,v_ego, lead, CS, max_speed_kph):
   max_speed_mult = 1.
