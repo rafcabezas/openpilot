@@ -139,7 +139,8 @@ class Cluster(object):
   def __init__(self):
     self.tracks = set()
     #BB frame delay for dRel calculation, in seconds
-    self.frame_delay = 1.0
+    self.frame_delay = 0.2
+    self.useTeslaRadar = CarSettings().get_value("useTeslaRadar")
 
   def add(self, t):
     # add the first track
@@ -219,7 +220,9 @@ class Cluster(object):
     return mean([t.track_id for t in self.tracks])
 
   def toRadarState(self):
-    dRel_delta_estimate = 0. # (self.vRel + self.aRel * self.frame_delay / 2.) * self.frame_delay
+    dRel_delta_estimate = 0.
+    if useTeslaRadar:
+      dRel_delta_estimate = (self.vRel + self.aRel * self.frame_delay / 2.) * self.frame_delay
     return {
       "dRel": float(self.dRel + dRel_delta_estimate) - RDR_TO_LDR,
       "yRel": float(self.yRel),
