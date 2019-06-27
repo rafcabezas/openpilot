@@ -108,7 +108,7 @@ class RadarInterface(object):
             (cpt['Index'] == self.rcp.vl[ii+1]['Index2']) and (self.valid_cnt[ii] > 4) and \
             (cpt['ProbExist'] >= OBJECT_MIN_PROBABILITY) and (cpt['LatDist']>=MINY) and (cpt['LatDist']<=MAXY):
           if ii not in self.pts and ( cpt['Tracked']):
-            self.pts[ii] = car.RadarState.RadarPoint.new_message()
+            self.pts[ii] = car.RadarData.RadarPoint.new_message()
             self.pts[ii].trackId = int((ii - 0x310)/3) 
           if ii in self.pts:
             self.pts[ii].dRel = cpt['LongDist']  # from front of car
