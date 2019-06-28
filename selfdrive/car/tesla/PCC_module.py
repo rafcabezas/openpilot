@@ -16,7 +16,7 @@ from collections import OrderedDict
 from common.params import Params
 from selfdrive.car.tesla.movingaverage import MovingAverage
 
-_DT = 0.1    # 10Hz in our case, since we don't want to process more than once the same radarState message
+_DT = 0.05    # 10Hz in our case, since we don't want to process more than once the same radarState message
 _DT_MPC = _DT
 
 # TODO: these should end up in values.py at some point, probably variable by trim
@@ -515,7 +515,7 @@ class PCCController(object):
       elif lead_dist_m > 0:
         self.had_lead = True
         #BB Use the Kalman lead speed and acceleration
-        lead_absolute_speed_kph = (self.lead_1.vLeadK + _DT * self.lead_1.aLeadK) * CV.MS_TO_KPH
+        lead_absolute_speed_kph = actual_speed_kph + rel_speed_kph #(self.lead_1.vLeadK + _DT * self.lead_1.aLeadK) * CV.MS_TO_KPH
         rel_speed_kph = lead_absolute_speed_kph - actual_speed_kph
         if lead_dist_m < MIN_SAFE_DIST_M and rel_speed_kph >= 3:
         # If lead is going faster, but we're not at a safe distance, hold 
@@ -638,7 +638,7 @@ def _sec_til_collision(lead, CS):
   if _is_present(lead) and lead.vRel < 0:
     if CS.useTeslaRadar:
       #BB: take in consideration acceleration when looking at time to collision. 
-      return lead.dRel / abs(lead.vRel + min(0,lead.aRel) * FOLLOW_TIME_S)
+      return min(0.1,-4+lead.dRel / abs(lead.vRel + min(0,lead.aRel) * FOLLOW_TIME_S))
     else:
       return _visual_radar_adjusted_dist_m(lead.dRel, CS) / abs(lead.vRel + min(0,lead.aRel) * FOLLOW_TIME_S)
   else:
@@ -674,29 +674,34 @@ def _accel_limit_multiplier(CS, lead):
       (0.6 * safe_dist_m, 0.15),
       (1.0 * safe_dist_m, 0.2),
       (3.0 * safe_dist_m, 0.4)])
-    return min(accel_mult * _interp_map(lead.dRel, accel_multipliers),1.0)
+    vrel_multipliers = OrderedDict([
+      # vrel m/s, accel mult
+      (0. , 1.),
+      (10., 3)])
+
+    return min(accel_mult * _interp_map(lead.vRel, vrel_multipliers) * _interp_map(lead.dRel, accel_multipliers),1.0)
   else:
-    return min(accel_mult * 0.3, 1.0)
+    return min(accel_mult * 0.4, 1.0)
 
 def _decel_limit(accel_min,v_ego, lead, CS, max_speed_kph):
   max_speed_mult = 1.
+  safe_dist_m = _safe_distance_m(v_ego)
   # if above speed limit quickly decel
   if v_ego * CV.MS_TO_KPH > max_speed_kph:
     max_speed_mult = 2.
   if _is_present(lead):
+    time_to_brake = max(0.1,_sec_til_collision(lead, CS))
     if 0 < lead.dRel < MIN_SAFE_DIST_M:
-      return -10.
-    elif lead.vLeadK > v_ego and lead.aLeadK < 0:
+      return -100.
+    elif lead.vRel >= 0.1  * v_ego and lead.aRel < 0.5 and lead.dRel <= 1.1 * safe_dist_m:
       # going faster but decelerating, reduce with up to the same acceleration
-      return lead.aLeadK
-    elif lead.vLeadK <= v_ego and lead.aLeadK < 0:
+      return -2 + lead.aRel 
+    elif lead.vRel <= 0.1 * v_ego and lead.aLeadK < 0.5  and lead.dRel <= 1.1 * safe_dist_m:
       # going slower AND decelerating
-      time_to_brake = _sec_til_collision(lead, CS)
-      if time_to_brake == 0:
-        accel_to_compensate = 1.
-      else:
-        accel_to_compensate = 3 * (v_ego - lead.vLeadK) / time_to_brake
-      return lead.aLeadK - accel_to_compensate
+      accel_to_compensate = min(3 * lead.vRel / time_to_brake,-0.7)
+      return -2 +  lead.aRel + accel_to_compensate
+    elif lead.vRel < -0.1 * v_ego and lead.dRel <= 1.1 * safe_dist_m:
+      return -3 + 2 * lead.vRel / time_to_brake
     # if we got here, aLeadK >=0 so use the old logic
     decel_map = OrderedDict([
       # (sec to collision, decel)
@@ -757,18 +762,19 @@ def _brake_pedal_min(v_ego, v_target, lead, CS, max_speed_kph):
       (0., 0.3),
       (1.5, 0.5),
       (5., 0.8),
-      (7777777., 1.0),
+      (7., 1.0),
       (50., 1.0)])
-  brake_mult = _interp_map(speed_delta_perc, brake_perc_map)
+  brake_mult1 = _interp_map(speed_delta_perc, brake_perc_map)
+  brake_mult2 = 0.
   if _is_present(lead):
     safe_dist_m = _safe_distance_m(CS.v_ego)
     brake_distance_map = OrderedDict([
       # (distance in m, decceleration fraction)
-      (0.6 * safe_dist_m, 8.),
-      (1.0 * safe_dist_m, 2.),
-      (3.0 * safe_dist_m, 1.)])
-    brake_mult = brake_mult * _interp_map(lead.dRel, brake_distance_map)
-  brake_mult = min(brake_mult, 1.0)
+      (0.8 * safe_dist_m, 1.),
+      (1.0 * safe_dist_m, .6),
+      (3.0 * safe_dist_m, .4)])
+    brake_mult2 = _interp_map(lead.dRel, brake_distance_map)
+  brake_mult = max(brake_mult1, brake_mult2)
   return -brake_mult
     
 def _jerk_limits(v_ego, lead, max_speed_kph, lead_last_seen_time_ms, CS):
