@@ -1136,7 +1136,7 @@ static void tesla_rx_hook(CAN_FIFOMailBox_TypeDef *to_push)
     int brake_pressed = (to_push->RDLR & 0x8000) >> 15;
     int tesla_speed_mph = ((((((to_push->RDLR >> 24) & 0x0F) << 8) + (( to_push->RDLR >> 16) & 0xFF)) * 0.05 -25));
     //for fake messages for radar we need also in kph
-    actual_speed_kph = (int)(tesla_speed_mph * 1.609);
+    // actual_speed_kph = (int)(tesla_speed_mph * 1.609);
     
     //if the car goes into reverse, set UJA1023 output pin 5 to high. If Drive, set pin 1 high
     //DI_gear 7 "DI_GEAR_SNA" 4 "DI_GEAR_D" 3 "DI_GEAR_N" 2 "DI_GEAR_R" 1 "DI_GEAR_P" 0 "DI_GEAR_INVALID" ;
@@ -1514,7 +1514,7 @@ static int tesla_tx_hook(CAN_FIFOMailBox_TypeDef *to_send)
     DAS_steeringEnabled = (b7 >> 7);
 
     desired_angle = DAS_steeringAngle * 0.1 - 1638.35;
-    int16_t violation = 0;
+    // int16_t violation = 0;
 
     if (DAS_steeringEnabled == 0) {
       //steering is not enabled, do not check angles and do send
@@ -1531,13 +1531,13 @@ static int tesla_tx_hook(CAN_FIFOMailBox_TypeDef *to_send)
 
       if (max_limit_check(desired_angle, highest_desired_angle, lowest_desired_angle))
       {
-        violation = 1;
+        // violation = 1;
         controls_allowed = 0;
         puts("Angle limit - delta! \n");
       }
       if (max_limit_check(desired_angle, TESLA_MAX_ANGLE, -TESLA_MAX_ANGLE))
       {
-        violation = 1;
+        // violation = 1;
         controls_allowed = 0;
         puts("Angle limit - max! \n");
       }
