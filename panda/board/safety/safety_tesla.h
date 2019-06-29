@@ -1681,7 +1681,8 @@ static void tesla_fwd_to_radar_modded(int bus_num, CAN_FIFOMailBox_TypeDef *to_f
     to_send.RDHR = to_send.RDHR | (crc << 24);
     tesla_radar_x199_id++;
     tesla_radar_x199_id = tesla_radar_x199_id % 16;
-    send_fake_message(to_send.RIR, to_send.RDTR, 8, 0x199, tesla_radar_can, to_send.RDLR, to_send.RDHR);
+    can_send(&to_send, bus_num);
+    return;
   }
 
   if (addr == 0x20A )
@@ -1816,7 +1817,7 @@ static int tesla_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd)
     }
 
     //check all messages we need to also send to radar, moddified, all the time
-    if  ((/*(addr == 0x00E ) || */(addr == 0x308 ) || (addr == 0x45 ) || (addr == 0x398 ) ||
+    if  (((addr == 0x00E) || (addr == 0x308 ) || (addr == 0x45 ) || (addr == 0x398 ) ||
     (addr == 0x405 ) ||  (addr == 0x30A)) && (enable_radar_emulation == 1))  {
       tesla_fwd_to_radar_modded(tesla_radar_can, to_fwd);
     }
