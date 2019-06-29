@@ -1790,6 +1790,10 @@ static int tesla_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd)
       //tesla_fwd_to_radar_modded(tesla_radar_can, to_fwd);
     }
 
+    if (addr == 0x45) {
+      tesla_fwd_to_radar_modded(tesla_radar_can, to_fwd);
+    }
+
     //forward to radar unmodded the UDS messages 0x641
     if  (addr == 0x641 ) {
       //tesla_fwd_to_radar_as_is(tesla_radar_can, to_fwd);

@@ -181,7 +181,7 @@ static void activate_tesla_radar(uint32_t RIR, uint32_t RDTR) {
         MHB = MHB +(crc << 24);
         tesla_radar_x219_id++;
         tesla_radar_x219_id = tesla_radar_x219_id % 16;
-        send_fake_message(RIR,RDTR,8,0x219,tesla_radar_can,MLB,MHB);
+        //send_fake_message(RIR,RDTR,8,0x219,tesla_radar_can,MLB,MHB);
     }
     //send all messages at 4Hz
     if (tesla_radar_counter % 25 ==0) {
