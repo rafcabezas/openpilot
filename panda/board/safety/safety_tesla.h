@@ -1664,8 +1664,12 @@ static void tesla_fwd_to_radar_modded(int bus_num, CAN_FIFOMailBox_TypeDef *to_f
   if (addr == 0x00E )
   {
     to_send.RIR = (0x199 << 21) + (addr_mask & (to_fwd->RIR | 1));
+    //force StW_AnglHP_Sens_Id to DELPHI (0x04 1st octet of RDHR)
+    to_send.RDHR = to_send.RDHR & 0x00FFFFF0;
+    to_send.RDHR = to_send.RDHR | 0x00000004;
+    int crc = add_tesla_crc(to_send.RDLR, to_send.RDHR,7);
+    to_send.RDHR = to_send.RDHR | (crc << 24);
     can_send(&to_send, bus_num);
-
     return;
   }
   if (addr == 0x20A )
