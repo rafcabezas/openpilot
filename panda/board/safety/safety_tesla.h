@@ -1649,7 +1649,7 @@ static void tesla_fwd_to_radar_modded(int bus_num, CAN_FIFOMailBox_TypeDef *to_f
 
     return;
   }
-  if (addr == 0x00E )
+  if (addr == 0x00E) //check
   {
     to_send.RIR = (0x199 << 21) + (addr_mask & (to_fwd->RIR | 1));
     can_send(&to_send, bus_num);
@@ -1743,7 +1743,7 @@ static void tesla_fwd_to_radar_modded(int bus_num, CAN_FIFOMailBox_TypeDef *to_f
 
     return;
   }
-  if (addr == 0x45 )
+  if (addr == 0x45 ) //check
   {
     to_send.RIR = (0x219 << 21) + (addr_mask & (to_fwd->RIR | 1));
     can_send(&to_send, bus_num);
@@ -1790,7 +1790,7 @@ static int tesla_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd)
       //tesla_fwd_to_radar_modded(tesla_radar_can, to_fwd);
     }
 
-    if (addr == 0x45) {
+    if ((addr == 0xE) || (addr == 0x45)) {
       tesla_fwd_to_radar_modded(tesla_radar_can, to_fwd);
     }
 

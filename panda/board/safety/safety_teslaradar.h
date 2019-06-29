@@ -106,7 +106,7 @@ static void activate_tesla_radar(uint32_t RIR, uint32_t RDTR) {
     MHB = MHB +(crc << 24);
     tesla_radar_x199_id++;
     tesla_radar_x199_id = tesla_radar_x199_id % 16;
-    send_fake_message(RIR,RDTR,8,0x199,tesla_radar_can,MLB,MHB);
+    //send_fake_message(RIR,RDTR,8,0x199,tesla_radar_can,MLB,MHB); //0x0e
     //send 169
     int speed_kph = (int)(actual_speed_kph/0.04) & 0x1FFF;
     MLB = (speed_kph | (speed_kph << 13) | (speed_kph << 26)) & 0xFFFFFFFF;
@@ -181,7 +181,7 @@ static void activate_tesla_radar(uint32_t RIR, uint32_t RDTR) {
         MHB = MHB +(crc << 24);
         tesla_radar_x219_id++;
         tesla_radar_x219_id = tesla_radar_x219_id % 16;
-        //send_fake_message(RIR,RDTR,8,0x219,tesla_radar_can,MLB,MHB);
+        //send_fake_message(RIR,RDTR,8,0x219,tesla_radar_can,MLB,MHB); //0x45
     }
     //send all messages at 4Hz
     if (tesla_radar_counter % 25 ==0) {
