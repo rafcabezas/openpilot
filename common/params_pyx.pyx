@@ -70,6 +70,17 @@ keys = {
   b"Offroad_NeosUpdate": [TxType.CLEAR_ON_MANAGER_START],
   b"Offroad_UpdateFailed": [TxType.CLEAR_ON_MANAGER_START],
   b"Offroad_HardwareUnsupported": [TxType.CLEAR_ON_MANAGER_START],
+
+  #Tesla
+  b"DriverUsbCameraID": [TxType.PERSISTENT],
+  b"RoadUsbCameraID": [TxType.PERSISTENT],
+  b"DriverUsbCameraFx": [TxType.PERSISTENT],
+  b"DriverUsbCameraFlip": [TxType.PERSISTENT],
+  b"RoadUsbCameraFx": [TxType.PERSISTENT],
+  b"RoadUsbCameraFlip": [TxType.PERSISTENT],
+  b"TeslaModel": [TxType.PERSISTENT],
+  b"SpeedLimitOffset": [TxType.PERSISTENT],
+  b"LimitSetSpeed": [TxType.PERSISTENT],
 }
 
 def ensure_bytes(v):

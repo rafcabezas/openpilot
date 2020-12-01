@@ -93,12 +93,12 @@ class CarInterface(CarInterfaceBase):
     return float(max(max_accel, a_target / A_ACC_MAX)) * min(speedLimiter, accelLimiter)
 
   @staticmethod
-  def get_params(candidate, fingerprint=gen_empty_fingerprint(), has_relay=False, car_fw=[]):
+  def get_params(candidate, fingerprint=gen_empty_fingerprint(), car_fw=[]):
 
     # Scaled tire stiffness
     ts_factor = 8 
 
-    ret = CarInterfaceBase.get_std_params(candidate, fingerprint, has_relay)
+    ret = CarInterfaceBase.get_std_params(candidate, fingerprint)
 
     ret.carName = "tesla"
     ret.carFingerprint = candidate
@@ -344,7 +344,7 @@ class CarInterface(CarInterfaceBase):
     if can_rcv_error:
       self.can_invalid_count += 1
       if self.can_invalid_count >= 100: #BB increased to 100 to see if we still get the can error messages
-        events.add(EventName.invalidGiraffeToyota)
+        events.add(EventName.invalidGiraffeHondaDEPRECATED)
         self.CS.DAS_canErrors = 1
         if self.CC.opState == 1:
           self.CC.opState = 2

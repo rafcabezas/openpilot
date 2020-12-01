@@ -1,5 +1,6 @@
 from common.numpy_fast import interp
 import numpy as np
+from selfdrive.car.modules.ALCA_module import ALCAModelParser
 from cereal import log
 
 CAMERA_OFFSET = 0.06  # m from center car to camera
@@ -22,7 +23,7 @@ def eval_poly(poly, x):
 
 
 class LanePlanner:
-  def __init__(self):
+  def __init__(self, shouldUseAlca):
     self.l_poly = [0., 0., 0., 0.]
     self.r_poly = [0., 0., 0., 0.]
     self.p_poly = [0., 0., 0., 0.]
@@ -43,6 +44,9 @@ class LanePlanner:
 
     self._path_pinv = compute_path_pinv()
     self.x_points = np.arange(50)
+    self.shouldUseAlca = shouldUseAlca
+    if shouldUseAlca:
+      self.ALCAMP = ALCAModelParser()
 
   def parse_model(self, md):
     if len(md.leftLane.poly):
@@ -62,7 +66,7 @@ class LanePlanner:
       self.l_lane_change_prob = md.meta.desireState[log.PathPlan.Desire.laneChangeLeft]
       self.r_lane_change_prob = md.meta.desireState[log.PathPlan.Desire.laneChangeRight]
 
-  def update_d_poly(self, v_ego):
+  def update_d_poly(self, v_ego, md, alca ):
     # only offset left and right lane lines; offsetting p_poly does not make sense
     self.l_poly[3] += CAMERA_OFFSET
     self.r_poly[3] += CAMERA_OFFSET
@@ -102,4 +106,13 @@ class LanePlanner:
     lr_prob = l_prob + r_prob - l_prob * r_prob
 
     d_poly_lane = (l_prob * path_from_left_lane + r_prob * path_from_right_lane) / (l_prob + r_prob + 0.0001)
+
+    # ALCA integration
+    if self.shouldUseAlca and alca:
+      self.r_poly,self.l_poly,self.r_prob,self.l_prob,self.lane_width, self.p_poly = self.ALCAMP.update(v_ego, md, np.array(self.r_poly), np.array(self.l_poly), self.r_prob, self.l_prob, self.lane_width, self.p_poly)
+
     self.d_poly = lr_prob * d_poly_lane + (1.0 - lr_prob) * self.p_poly.copy()
+
+  def update(self, v_ego, md, alca):
+    self.parse_model(md)
+    self.update_d_poly(v_ego, md, alca)
