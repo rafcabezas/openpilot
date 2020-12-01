@@ -30,8 +30,6 @@
 #include "common/params.h"
 #include "sound.hpp"
 
-#include "cereal/gen/c/log.capnp.h"
-
 #define COLOR_BLACK nvgRGBA(0, 0, 0, 255)
 #define COLOR_BLACK_ALPHA(x) nvgRGBA(0, 0, 0, x)
 #define COLOR_WHITE nvgRGBA(255, 255, 255, 255)

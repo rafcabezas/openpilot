@@ -1,5 +1,5 @@
 #include <math.h>
-#include "cereal/gen/c/ui.capnp.h"
+#include "cereal/gen/cpp/ui.capnp.h"
 
 #if !defined(QCOM) && !defined(QCOM2)
 #ifndef __APPLE__
@@ -239,28 +239,17 @@ bool bb_handle_ui_touch( UIState *s, int touch_x, int touch_y) {
         }
         //now let's send the cereal
         
-        struct capn c;
-        capn_init_malloc(&c);
-        struct capn_ptr cr = capn_root(&c);
-        struct capn_segment *cs = cr.seg;
-        
-        struct cereal_UIButtonStatus btn_d;
-        btn_d.btnId = i;
-        btn_d.btnStatus = s->b.btns_status[i];
+        ::capnp::MallocMessageBuilder message;
+        cereal::UIButtonStatus::Builder btn = message.initRoot<cereal::UIButtonStatus>();
 
-        cereal_UIButtonStatus_ptr btn_p = cereal_new_UIButtonStatus(cs);
-        
-        cereal_write_UIButtonStatus(&btn_d, btn_p);
-        int setp_ret = capn_setp(capn_root(&c), 0, btn_p.p);
-        assert(setp_ret == 0);
+        btn.setBtnId(i);
+        btn.setBtnStatus(s->b.btns_status[i]);
 
-        uint8_t buf[4096];
-        ssize_t rs = capn_write_mem(&c, buf, sizeof(buf), 0);
-        char* data = (char*) buf;
-        capn_free(&c);
-        
-        s->b.uiButtonStatus_sock->send(data,rs);
-        
+        kj::Array<capnp::word> words = messageToFlatArray(message);
+        kj::ArrayPtr<kj::byte> bytes = words.asBytes();
+
+        s->b.uiButtonStatus_sock->send((char *)(bytes.begin()), bytes.size());
+
         return true;
       }
     }
@@ -1258,170 +1247,115 @@ void bb_ui_set_car( UIState *s, char *model, char *folder) {
     strcpy(s->b.car_folder, folder);
 }
 
-bool bb_ui_poll_update( UIState *s) {
+bool bb_ui_poll_update(UIState* s) {
+  //check tri-state switch
+  bool user_input = bb_ui_read_triState_switch(s);
 
-    // int err;
-    
-    //check tri-state switch
-    bool user_input = bb_ui_read_triState_switch(s);
-    
-    while (true) {
-      auto polls = s->b.poller->poll(0);
-      if (polls.size() == 0)
-        return user_input;
+  while (true) {
+    auto polls = s->b.poller->poll(0);
+    if (polls.size() == 0)
+      return user_input;
 
-      for (auto sock : polls) {
-        Message * msg = sock->receive();
+    for (auto sock : polls) {
+      auto msg = sock->receive();
+      if (!msg) {
+        continue;
+      }
+      auto amsg = kj::heapArray<capnp::word>((msg->getSize() / sizeof(capnp::word)) + 1);
+      memcpy(amsg.begin(), msg->getData(), msg->getSize());
+      capnp::FlatArrayMessageReader cmsg(amsg);
 
-        if (sock == s->b.uiButtonInfo_sock) {
-          //button info socket
-          struct capn ctx;
-          capn_init_mem(&ctx, (uint8_t*)msg->getData(), msg->getSize(), 0);
+      if (sock == s->b.uiButtonInfo_sock) {
+        cereal::UIButtonInfo::Reader customButton = cmsg.getRoot<cereal::UIButtonInfo>();
 
-          cereal_UIButtonInfo_ptr stp;
-          stp.p = capn_getp(capn_root(&ctx), 0, 1);
-          struct cereal_UIButtonInfo datad;
-          cereal_read_UIButtonInfo(&datad, stp);
+        int id = customButton.getBtnId();
+        // printf("*** got button info: ID = (%d)\n", id);
+        // printf("*button name = '%s'**\n", (char *)customButton.getBtnName().cStr());
+        strcpy(s->b.btns[id].btn_name, (char*)customButton.getBtnName().cStr());
+        strcpy(s->b.btns[id].btn_label, (char*)customButton.getBtnLabel().cStr());
+        strcpy(s->b.btns[id].btn_label2, (char*)customButton.getBtnLabel2().cStr());
+        s->b.btns_status[id] = customButton.getBtnStatus();
+      }
+      else if (sock == s->b.uiCustomAlert_sock) {
+        cereal::UICustomAlert::Reader data = cmsg.getRoot<cereal::UICustomAlert>();
 
-          int id = datad.btnId;
-          //LOGW("got button info: ID = (%d)", id);
-          strcpy(s->b.btns[id].btn_name,(char *)datad.btnName.str);
-          strcpy(s->b.btns[id].btn_label, (char *)datad.btnLabel.str);
-          strcpy(s->b.btns[id].btn_label2, (char *)datad.btnLabel2.str);
-          s->b.btns_status[id] = datad.btnStatus;
-          capn_free(&ctx);
-        }  
-        if (sock == s->b.uiCustomAlert_sock) {
-          //custom alert socket
-          struct capn ctx;
-          capn_init_mem(&ctx, (uint8_t*)msg->getData(), msg->getSize(), 0);
+        strcpy(s->b.custom_message, data.getCaText().cStr());
+        s->b.custom_message_status = (UIStatus)data.getCaStatus();
 
-          cereal_UICustomAlert_ptr stp;
-          stp.p = capn_getp(capn_root(&ctx), 0, 1);
-          struct cereal_UICustomAlert  datad;
-          cereal_read_UICustomAlert(&datad, stp);
-
-          strcpy(s->b.custom_message,datad.caText.str);
-          s->b.custom_message_status = (UIStatus)datad.caStatus;
-
-          if ((strlen(s->b.custom_message) > 0) && (s->scene.alert_text1.length()==0)){
-            if ((!((bb_get_button_status(s,(char *)"msg") == 0) && (s->b.custom_message_status<=3))) && (s->vision_connected == true)) {
-              user_input = true;
-            }
+        if ((strlen(s->b.custom_message) > 0) && (s->scene.alert_text1.length() == 0)) {
+          if ((!((bb_get_button_status(s, (char*)"msg") == 0) && (s->b.custom_message_status <= 3))) && (s->vision_connected == true)) {
+            user_input |= true;
           }
-
-          if ((s->scene.alert_text1.length() > 0) || (s->scene.alert_text2.length() > 0)) {
-            user_input = true;
-          }
-          
-          capn_free(&ctx);
-        }  
-        if (sock == s->b.uiSetCar_sock) {
-          //set car model socket
-          struct capn ctx;
-          capn_init_mem(&ctx, (uint8_t*)msg->getData(), msg->getSize(), 0);
-
-          cereal_UISetCar_ptr stp;
-          stp.p = capn_getp(capn_root(&ctx), 0, 1);
-          struct cereal_UISetCar datad;
-          cereal_read_UISetCar(&datad, stp);
-
-          if ((strcmp(s->b.car_model,(char *) datad.icCarName.str) != 0) || (strcmp(s->b.car_folder, (char *) datad.icCarFolder.str) !=0)) {
-            strcpy(s->b.car_model, (char *) datad.icCarName.str);
-            strcpy(s->b.car_folder, (char *) datad.icCarFolder.str);
-            //LOGW("Car folder set (%s)", s->b.car_folder);
-
-            if (strcmp(s->b.car_folder,"tesla")==0) {
-              s->b.img_logo = nvgCreateImage(s->vg, "../assets/img_spinner_comma.png", 1);
-              s->b.img_logo2 = nvgCreateImage(s->vg, "../assets/img_spinner_comma2.png", 1);
-              //LOGW("Spinning logo set for Tesla");
-            } else if (strcmp(s->b.car_folder,"honda")==0) {
-              s->b.img_logo = nvgCreateImage(s->vg, "../assets/img_spinner_comma.honda.png", 1);
-              s->b.img_logo2 = nvgCreateImage(s->vg, "../assets/img_spinner_comma.honda2.png", 1);
-              //LOGW("Spinning logo set for Honda");
-            } else if (strcmp(s->b.car_folder,"toyota")==0) {
-              s->b.img_logo = nvgCreateImage(s->vg, "../assets/img_spinner_comma.toyota.png", 1);
-              s->b.img_logo2 = nvgCreateImage(s->vg, "../assets/img_spinner_comma.toyota2.png", 1);
-              //LOGW("Spinning logo set for Toyota");
-            };
-          }
-          if (datad.icShowCar == 1) {
-            s->b.icShowCar = true;
-          } else {
-            s->b.icShowCar = false;
-          }
-          if (datad.icShowLogo == 1) {
-            s->b.icShowLogo = true;
-          } else {
-            s->b.icShowLogo = false;
-          }
-          capn_free(&ctx);
-        }  
-        if (sock == s->b.uiPlaySound_sock) {
-          // play sound socket
-          struct capn ctx;
-          capn_init_mem(&ctx, (uint8_t*)msg->getData(), msg->getSize(), 0);
-
-          cereal_UIPlaySound_ptr stp;
-          stp.p = capn_getp(capn_root(&ctx), 0, 1);
-          struct cereal_UIPlaySound datad;
-          cereal_read_UIPlaySound(&datad, stp);
-
-          // int snd = datad.sndSound;
-          // bb_ui_play_sound(s,snd);
-          
-          capn_free(&ctx);
-        } 
-        if (sock == s->b.gps_sock) {
-            // gps socket
-            struct capn ctx;
-            capn_init_mem(&ctx, (uint8_t*)msg->getData(), msg->getSize(), 0);
-
-            cereal_Event_ptr eventp;
-            eventp.p = capn_getp(capn_root(&ctx), 0, 1);
-            struct cereal_Event eventd;
-            cereal_read_Event(&eventd, eventp);
-
-            struct cereal_GpsLocationData datad;
-            cereal_read_GpsLocationData(&datad, eventd.gpsLocationExternal);
-
-            s->b.gpsAccuracy = datad.accuracy;
-            if (s->b.gpsAccuracy>100)
-            {
-                s->b.gpsAccuracy=99.99;
-            }
-            else if (s->b.gpsAccuracy==0)
-            {
-                s->b.gpsAccuracy=99.8;
-            }
-            capn_free(&ctx);
         }
-        if (sock == s->b.uiGyroInfo_sock) {
-          //gyro info socket
-          struct capn ctx;
-          capn_init_mem(&ctx, (uint8_t*)msg->getData(), msg->getSize(), 0);
 
-          cereal_UIGyroInfo_ptr stp;
-          stp.p = capn_getp(capn_root(&ctx), 0, 1);
-          struct cereal_UIGyroInfo datad;
-          cereal_read_UIGyroInfo(&datad, stp);
-          s->b.accPitch = datad.accPitch;
-          s->b.accRoll = datad.accRoll;
-          s->b.accYaw = datad.accYaw;
-          s->b.magPitch = datad.magPitch;
-          s->b.magRoll = datad.magRoll;
-          s->b.magYaw = datad.magYaw;
-          s->b.gyroPitch = datad.gyroPitch;
-          s->b.gyroRoll = datad.gyroRoll;
-          s->b.gyroYaw = datad.gyroYaw;
-          
-          capn_free(&ctx);
+        if ((s->scene.alert_text1.length() > 0) || (s->scene.alert_text2.length() > 0)) {
+          user_input |= true;
         }
-        delete msg; 
-      }  
+      }
+      else if (sock == s->b.uiSetCar_sock) {
+        //set car model socket
+        cereal::UISetCar::Reader data = cmsg.getRoot<cereal::UISetCar>();
+
+        if ((strcmp(s->b.car_model, (char*)data.getIcCarName().cStr()) != 0) || (strcmp(s->b.car_folder, (char*)data.getIcCarFolder().cStr()) != 0)) {
+          strcpy(s->b.car_model, (char*)data.getIcCarName().cStr());
+          strcpy(s->b.car_folder, (char*)data.getIcCarFolder().cStr());
+          //LOGW("Car folder set (%s)", s->b.car_folder);
+
+          if (strcmp(s->b.car_folder, "tesla") == 0) {
+            s->b.img_logo = nvgCreateImage(s->vg, "../assets/img_spinner_comma.png", 1);
+            s->b.img_logo2 = nvgCreateImage(s->vg, "../assets/img_spinner_comma2.png", 1);
+            //LOGW("Spinning logo set for Tesla");
+          }
+          else if (strcmp(s->b.car_folder, "honda") == 0) {
+            s->b.img_logo = nvgCreateImage(s->vg, "../assets/img_spinner_comma.honda.png", 1);
+            s->b.img_logo2 = nvgCreateImage(s->vg, "../assets/img_spinner_comma.honda2.png", 1);
+            //LOGW("Spinning logo set for Honda");
+          }
+          else if (strcmp(s->b.car_folder, "toyota") == 0) {
+            s->b.img_logo = nvgCreateImage(s->vg, "../assets/img_spinner_comma.toyota.png", 1);
+            s->b.img_logo2 = nvgCreateImage(s->vg, "../assets/img_spinner_comma.toyota2.png", 1);
+            //LOGW("Spinning logo set for Toyota");
+          };
+        }
+        s->b.icShowCar = (data.getIcShowCar() == 1);
+        s->b.icShowLogo = (data.getIcShowLogo() == 1);
+      }
+      else if (sock == s->b.uiPlaySound_sock) {
+        // play sound socket
+        // cereal::UIPlaySound::Reader data = cmsg.getRoot<cereal::UIPlaySound>();
+
+        // int snd = data.getSndSound();
+        // bb_ui_play_sound(s,snd);
+      }
+      else if (sock == s->b.gps_sock) {
+        // gps socket
+        cereal::Event::Reader event = cmsg.getRoot<cereal::Event>();
+        auto data = event.getGpsLocationExternal();
+
+        s->b.gpsAccuracy = data.getAccuracy();
+        if (s->b.gpsAccuracy > 100) {
+          s->b.gpsAccuracy = 99.99;
+        }
+        else if (s->b.gpsAccuracy == 0) {
+          s->b.gpsAccuracy = 99.8;
+        }
+      }
+      else if (sock == s->b.uiGyroInfo_sock) {
+        //gyro info socket
+        cereal::UIGyroInfo::Reader data = cmsg.getRoot<cereal::UIGyroInfo>();
+
+        s->b.accPitch = data.getAccPitch();
+        s->b.accRoll = data.getAccRoll();
+        s->b.accYaw = data.getAccYaw();
+        s->b.magPitch = data.getMagPitch();
+        s->b.magRoll = data.getMagRoll();
+        s->b.magYaw = data.getMagYaw();
+        s->b.gyroPitch = data.getGyroPitch();
+        s->b.gyroRoll = data.getGyroRoll();
+        s->b.gyroYaw = data.getGyroYaw();
+      }
     }
+  }
 
-    return user_input;
+  return user_input;
 }
-
- 
