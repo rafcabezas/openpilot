@@ -7,7 +7,6 @@ import errno
 import signal
 import shutil
 import subprocess
-from cereal import tinkla
 import datetime
 import textwrap
 from typing import Dict, List
@@ -79,8 +78,10 @@ import traceback
 from multiprocessing import Process
 
 # Run scons
-spinner = Spinner(noop=(__name__ != "__main__" or not ANDROID))
+spinner = Spinner()
 spinner.update("0")
+if __name__ != "__main__":
+  spinner.close()
 
 if not prebuilt:
   for retry in [True, False]:
@@ -125,8 +126,9 @@ if not prebuilt:
           for i in range(3, -1, -1):
             print("....%d" % i)
             time.sleep(1)
-          #subprocess.check_call(["scons", "-c"], cwd=BASEDIR, env=env)
-          #shutil.rmtree("/tmp/scons_cache")
+          subprocess.check_call(["scons", "-c"], cwd=BASEDIR, env=env)
+          shutil.rmtree("/tmp/scons_cache", ignore_errors=True)
+          shutil.rmtree("/data/scons_cache", ignore_errors=True)
         else:
           print("scons build failed after retry")
           sys.exit(1)
@@ -139,9 +141,8 @@ if not prebuilt:
         cloudlog.error("scons build failed\n" + error_s)
 
         # Show TextWindow
-        no_ui = __name__ != "__main__" or not ANDROID
         error_s = "\n \n".join(["\n".join(textwrap.wrap(e, 65)) for e in errors])
-        with TextWindow("openpilot failed to build\n \n" + error_s, noop=no_ui) as t:
+        with TextWindow("openpilot failed to build\n \n" + error_s) as t:
           t.wait_for_exit()
 
         exit(1)
@@ -158,14 +159,11 @@ from selfdrive.version import version, dirty
 from selfdrive.loggerd.config import ROOT
 from selfdrive.launcher import launcher
 from common.apk import update_apks, pm_apply_packages, start_offroad
-from selfdrive.car.tesla.readconfig import CarSettings
-from selfdrive.tinklad.tinkla_interface import TinklaClient
 
 ThermalStatus = cereal.log.ThermalData.ThermalStatus
 
 # comment out anything you don't want to run
 managed_processes = {
-  "tinklad":  "selfdrive.tinklad.tinklad",
   "thermald": "selfdrive.thermald.thermald",
   "uploader": "selfdrive.loggerd.uploader",
   "deleter": "selfdrive.loggerd.deleter",
@@ -213,17 +211,12 @@ interrupt_processes: List[str] = []
 kill_processes = ['sensord']
 
 persistent_processes = [
-  'tinklad',
   'thermald',
+  'logmessaged',
   'ui',
+  'uploader',
   'deleter',
 ]
-
-if not WEBCAM:
-    persistent_processes += [
-      'logmessaged',
-      'uploader',
-    ]
 
 if not PC:
   persistent_processes += [
@@ -380,11 +373,8 @@ def kill_managed_process(name):
         join_process(running[name], 15)
         if running[name].exitcode is None:
           cloudlog.critical("unkillable process %s failed to die!" % name)
-          # TODO: Use method from HARDWARE
-          if ANDROID:
-            cloudlog.critical("FORCE REBOOTING PHONE!")
-            os.system("date >> /sdcard/unkillable_reboot")
-            os.system("reboot")
+          os.system("date >> /sdcard/unkillable_reboot")
+          HARDWARE.reboot()
           raise RuntimeError
       else:
         cloudlog.info("killing %s with SIGKILL" % name)
@@ -407,8 +397,10 @@ def cleanup_all_processes(signal, frame):
 
 
 def send_managed_process_signal(name, sig):
-  if name not in running or name not in managed_processes:
+  if name not in running or name not in managed_processes or \
+     running[name].exitcode is not None:
     return
+
   cloudlog.info(f"sending signal {sig} to {name}")
   os.kill(running[name].pid, sig)
 
@@ -424,9 +416,7 @@ def manager_init(should_register=True):
       raise Exception("server registration failed")
   else:
     dongle_id = "c"*16
-  #BB
-  if not dongle_id:
-      dongle_id = "nada"
+
   # set dongle id
   cloudlog.info("dongle id is " + dongle_id)
   os.environ['DONGLE_ID'] = dongle_id
@@ -450,32 +440,6 @@ def manager_init(should_register=True):
     os.chmod(BASEDIR, 0o755)
     os.chmod(os.path.join(BASEDIR, "cereal"), 0o755)
     os.chmod(os.path.join(BASEDIR, "cereal", "libmessaging_shared.so"), 0o755)
-
-def system(cmd):
-  try:
-    cloudlog.info("running %s" % cmd)
-    subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
-  except subprocess.CalledProcessError as e:
-    cloudlog.event("running failed",
-      cmd=e.cmd,
-      output=e.output[-1024:],
-      returncode=e.returncode)
-
-def sendUserInfoToTinkla(params, tinklaClient):
-  carSettings = CarSettings()
-  gitRemote = params.get("GitRemote")
-  gitBranch = params.get("GitBranch")
-  gitHash = params.get("GitCommit")
-  dongleId = params.get("DongleId")
-  userHandle = carSettings.userHandle
-  info = tinkla.Interface.UserInfo.new_message(
-      openPilotId=dongleId,
-      userHandle=userHandle,
-      gitRemote=gitRemote,
-      gitBranch=gitBranch,
-      gitHash=gitHash
-  )
-  tinklaClient.setUserInfo(info)
 
 def manager_thread():
   # now loop
@@ -512,22 +476,8 @@ def manager_thread():
   started_prev = False
   logger_dead = False
 
-  # Tinkla interface
-  last_tinklad_send_attempt_time = 0
-  tinklaClient = TinklaClient()
-  sendUserInfoToTinkla(params=params, tinklaClient=tinklaClient)
-  start_t = time.time()
-  first_proc = None
-
   while 1:
     msg = messaging.recv_sock(thermal_sock, wait=True)
-
-    # Attempt to send pending messages if there's any that queued while offline
-    # Seems this loop runs every second or so, throttle to once every 30s
-    now = time.time()
-    if now - last_tinklad_send_attempt_time >= 30:
-      tinklaClient.attemptToSendPendingMessages()
-      last_tinklad_send_attempt_time = now
 
     if msg.thermal.freeSpace < 0.05:
       logger_dead = True
@@ -560,16 +510,14 @@ def manager_thread():
     started_prev = msg.thermal.started
 
     # check the status of all processes, did any of them die?
-    # running_list = ["%s%s\u001b[0m" % ("\u001b[32m" if running[p].is_alive() else "\u001b[31m", p) for p in running]
-    #cloudlog.debug(' '.join(running_list))
+    running_list = ["%s%s\u001b[0m" % ("\u001b[32m" if running[p].is_alive() else "\u001b[31m", p) for p in running]
+    cloudlog.debug(' '.join(running_list))
 
     # Exit main loop when uninstall is needed
     if params.get("DoUninstall", encoding='utf8') == "1":
       break
 
 def manager_prepare(spinner=None):
-
-  carSettings = CarSettings()
   # build all processes
   os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -578,8 +526,7 @@ def manager_prepare(spinner=None):
 
   for i, p in enumerate(managed_processes):
     if spinner is not None:
-      spinText = carSettings.spinnerText
-      spinner.update(spinText % ((100.0 - total) + total * (i + 1) / len(managed_processes),))
+      spinner.update("%d" % ((100.0 - total) + total * (i + 1) / len(managed_processes),))
     prepare_managed_process(p)
 
 def uninstall():
@@ -614,9 +561,6 @@ def main():
     ("OpenpilotEnabledToggle", "1"),
     ("LaneChangeEnabled", "1"),
     ("IsDriverViewEnabled", "0"),
-    #Tesla
-    ("SpeedLimitOffset", "0"),
-    ("LimitSetSpeed", "0"),
   ]
 
   # set unset params
@@ -648,7 +592,6 @@ def main():
   except Exception:
     traceback.print_exc()
     crash.capture_exception()
-    print ("EXIT ON EXCEPTION")
   finally:
     cleanup_all_processes(None, None)
 
