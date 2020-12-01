@@ -114,9 +114,9 @@ void bb_draw_lane_fill ( UIState *s) {
   bool started = false;
   bool is_ghost = true;
   //left lane, first init
-  auto path = scene->model.getLeftLane();
-  auto points = path.getPoints();
-  off = 0.025*path.getProb();
+  auto path = scene->model.getLaneLines()[1];
+  auto points = path.getY();
+  off = 0.025*scene->model.getLaneLineProbs()[1];
   //draw left
   float px = 0;
   for (auto point = points.begin(); point != points.end(); point++) {
@@ -138,9 +138,9 @@ void bb_draw_lane_fill ( UIState *s) {
     px++;
   }
   //right lane, first init
-  path = scene->model.getRightLane();
-  points = path.getPoints();
-  off = 0.025*path.getProb();
+  path = scene->model.getLaneLines()[2];
+  points = path.getY();
+  off = 0.025*scene->model.getLaneLineProbs()[2];
   //draw right
   px = points.size();
   for (auto point = points.end(); point != points.begin();) {
