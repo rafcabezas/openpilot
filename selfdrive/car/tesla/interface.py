@@ -343,8 +343,9 @@ class CarInterface(CarInterfaceBase):
       self.CC.opState = 1
     if can_rcv_error:
       self.can_invalid_count += 1
-      if self.can_invalid_count >= 100: #BB increased to 100 to see if we still get the can error messages
-        events.add(EventName.invalidGiraffeToyota)
+      if self.can_invalid_count >= 200: #Raf increased to 200 #BB increased to 100 to see if we still get the can error messages
+        events.add(EventName.canError)
+        self.can_invalid_count = 0
         self.CS.DAS_canErrors = 1
         if self.CC.opState == 1:
           self.CC.opState = 2
