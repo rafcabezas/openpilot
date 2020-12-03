@@ -236,3 +236,11 @@ class PowerMonitoring:
     should_shutdown |= ((get_battery_capacity() < BATT_PERC_OFF) and (not get_battery_charging()) and ((now - offroad_timestamp) > 60))
     should_shutdown &= started_seen
     return should_shutdown
+
+## Tesla branch version.
+## We control EON charging in thermald, always power EON from Panda:
+class PowerMonitoringTesla(PowerMonitoring):
+  def should_disable_charging(self, health, offroad_timestamp):
+    return False
+  def should_shutdown(self, health, offroad_timestamp, started_seen, LEON):
+    return False

@@ -20,7 +20,7 @@ from selfdrive.controls.lib.alertmanager import set_offroad_alert
 from selfdrive.loggerd.config import get_available_percent
 from selfdrive.pandad import get_expected_signature
 from selfdrive.swaglog import cloudlog
-from selfdrive.thermald.power_monitoring import (PowerMonitoring,
+from selfdrive.thermald.power_monitoring import (PowerMonitoringTesla,
                                                  get_battery_capacity,
                                                  get_battery_current,
                                                  get_battery_status,
@@ -246,7 +246,7 @@ def thermald_thread():
   charging_disabled = False
 
   params = Params()
-  pm = PowerMonitoring()
+  pm = PowerMonitoringTesla()
   no_panda_cnt = 0
 
   thermal_config = get_thermal_config()
@@ -457,7 +457,7 @@ def thermald_thread():
     msg.thermal.thermalStatus = thermal_status
     thermal_sock.send(msg.to_bytes())
 
-    set_offroad_alert_if_changed("Offroad_ChargeDisabled", (not usb_power))
+    #Tesla branch commented out: set_offroad_alert_if_changed("Offroad_ChargeDisabled", (not usb_power))
 
     should_start_prev = should_start
     startup_conditions_prev = startup_conditions.copy()
