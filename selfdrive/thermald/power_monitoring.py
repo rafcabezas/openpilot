@@ -17,7 +17,7 @@ CAR_BATTERY_CAPACITY_uWh = 30e6
 CAR_CHARGING_RATE_W = 45
 
 VBATT_PAUSE_CHARGING = 11.0
-MAX_TIME_OFFROAD_S = 30*3600
+MAX_TIME_OFFROAD_S = 7*24*3600 # Tesla branch change increased to 7 days
 
 # Parameters
 def get_battery_capacity():
