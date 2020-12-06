@@ -80,10 +80,12 @@ def register():
   import jwt
   register_token = jwt.encode({'register':True, 'exp': datetime.utcnow() + timedelta(hours=1)}, private_key, algorithm='RS256')
 
+  resptext = ""
   try:
     cloudlog.info("getting pilotauth")
     resp = api_get("v2/pilotauth/", method='POST', timeout=15,
                    imei=get_imei(), serial=get_serial(), public_key=public_key, register_token=register_token)
+    resptext = resp.text                   
     dongleauth = json.loads(resp.text)
     dongle_id, access_token = dongleauth["dongle_id"], dongleauth["access_token"]
 
@@ -91,6 +93,7 @@ def register():
     params.put("AccessToken", access_token)
     return dongle_id, access_token
   except Exception:
+    print("Auth error: ", resptext)
     cloudlog.exception("failed to authenticate")
     if dongle_id is not None and access_token is not None:
       return dongle_id, access_token

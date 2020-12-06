@@ -294,7 +294,9 @@ def manager_init(should_register=True):
     if reg_res:
       dongle_id, dongle_secret = reg_res
     else:
-      raise Exception("server registration failed")
+      #raise Exception("server registration failed")
+      print("server registration failed")
+      dongle_id = "c"*16
   else:
     dongle_id = "c"*16
 
