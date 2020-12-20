@@ -72,7 +72,7 @@ int EPB_epasControl_idx = 0;
 
 //settings from bb_openpilot.cfg
 
-
+int DAS_gtwConfigReceived = 0;
 int enable_das_emulation = 1;
 int enable_radar_emulation = 1;
 
@@ -187,6 +187,7 @@ int DAS_inDrive_prev = 0;
 int DAS_present = 0;
 int tesla_radar_should_send = 0;
 int DAS_noEpasHarness = 0;
+int DAS_usesApillarHarness=0;
 
 //fake DAS - last stalk data used to cancel
 uint32_t DAS_lastStalkL =0x00;
@@ -996,6 +997,21 @@ static void tesla_rx_hook(CAN_FIFOMailBox_TypeDef *to_push)
     // Normal
     addr = to_push->RIR >> 21;
   }
+  
+  if ((addr == 0x398)  && (bus_number == 0)) {
+    if (DAS_gtwConfigReceived == 0) {
+      DAS_gtwConfigReceived = 1;
+      int dashw = ((to_push->RDLR >> 6) & 0x03);
+      int radhw = ((to_push->RDLR >> 10) & 0x03);
+      if (dashw == 1) {
+        DAS_noEpasHarness = 1;
+        enable_das_emulation = 1;
+      } 
+      if (radhw > 0) {
+        enable_radar_emulation = 1;
+      }
+    }
+  }
 
   //let's see if the pedal was pressed
   if ((addr == 0x552) && (bus_number == tesla_epas_can)) {
@@ -1553,6 +1569,12 @@ static int tesla_tx_hook(CAN_FIFOMailBox_TypeDef *to_send)
     DAS_ldwStatus = (b2 & 0x07);
     //FLAG NOT USED = ((b2 >> 3) & 0x01);
     DAS_noEpasHarness = ((b2 >> 4) & 0x01);
+    DAS_usesApillarHarness = ((b2 >> 5) & 0x01);
+    if (DAS_noEpasHarness == 1) {
+      tesla_epas_can = 0;
+    } else {
+      tesla_epas_can = 2;
+    }
     return false;
   }
 
@@ -1873,9 +1895,31 @@ static int tesla_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd)
 {
 
   int32_t addr = to_fwd->RIR >> 21;
+  int ret_val = -1;
 
-  if (bus_num == 0)
+  //if we never got the config from gtw, don't forward anything anywhere
+  if (DAS_gtwConfigReceived == 0) {
+    return -1;
+  }
+
+  //first let's deal with the messages we need to send to radar
+  if ((bus_num == 0) || ((bus_num == 2 ) && (DAS_usesApillarHarness == 1)))
   {
+    
+    //compute return value; do not forward 0->2 and 2->0 if no epas harness
+    if (bus_num == 0) {
+      if (DAS_noEpasHarness == 0) {
+        ret_val=2;
+      } else {
+        ret_val=-1;
+      }
+    } else if (bus_num == 2) {
+      if (DAS_noEpasHarness == 0) {
+        ret_val=0;
+      } else {
+        ret_val=-1;
+      }
+    }
 
     //check all messages we need to also send to radar, moddified, after we receive 0x631 from radar
     //148 does not exist, we use 115 at the same frequency to trigger and pass static vals
@@ -1884,17 +1928,29 @@ static int tesla_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd)
     (addr == 0x115 ) ||  (addr == 0x148 ) || (addr == 0x145)))
     {
       tesla_fwd_to_radar_modded(tesla_radar_can, to_fwd);
+      return ret_val;
     }
 
     //check all messages we need to also send to radar, moddified, all the time
     if  (((addr == 0xE ) || (addr == 0x308 ) || (addr == 0x45 ) || (addr == 0x398 ) ||
     (addr == 0x405 ) ||  (addr == 0x30A)) && (enable_radar_emulation == 1))  {
       tesla_fwd_to_radar_modded(tesla_radar_can, to_fwd);
+      return ret_val;
     }
 
     //forward to radar unmodded the UDS messages 0x641
     if  (addr == 0x641 ) {
       tesla_fwd_to_radar_as_is(tesla_radar_can, to_fwd);
+      return ret_val;
+    }
+  }
+  //now let's deal with CAN0 alone
+  if (bus_num == 0) {
+
+    if (DAS_noEpasHarness == 0) {
+      ret_val=2;
+    } else {
+      ret_val=-1;
     }
 
     // change inhibit of GTW_epasControl and enabled haptic for LDW
@@ -1906,26 +1962,21 @@ static int tesla_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd)
       int checksum = (GET_BYTE(to_fwd, 1) + GET_BYTE(to_fwd, 0) + 2) & 0xFF;
       to_fwd->RDLR = GET_BYTES_04(to_fwd) & 0xFFFF;
       to_fwd->RDLR = GET_BYTES_04(to_fwd) + (checksum << 16);
-      if (DAS_noEpasHarness == 0) {
-        return 2;
-      } else {
-        return -1;
-      }
+      return ret_val;
     }
 
     // remove EPB_epasControl
     if (addr == 0x214)
     {
+      //inhibit ibooster epas kill signal
       return -1;
     }
 
-    if (DAS_noEpasHarness == 0) {
-      return 2;
-    } else {
-      return -1;
-    }
+    //forward everything else to CAN 2 unless claiming no harness
+    return ret_val;
   }
 
+  //now let's deal with CAN1 - Radar
   if (bus_num == tesla_radar_can) {
     //send radar 0x531 and 0x651 from Radar CAN to CAN0
     if ((addr == 0x531) || (addr == 0x651)){ 
@@ -1936,25 +1987,16 @@ static int tesla_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd)
     return -1;
   }
 
-  if (bus_num == tesla_epas_can)
+  //now let's deal with CAN2 
+  if ((bus_num == tesla_epas_can) && (bus_num > 0))
   {
-
-    // remove GTW_epasControl in forwards
-    if (addr == 0x101)
-    {
-      return -1;
-    }
-
     // remove Pedal in forwards
     if ((addr == 0x551) || (addr == 0x552)) {
       return -1;
     }
 
-    if (DAS_noEpasHarness == 0) {
-      return 0;
-    } else {
-      return -1;
-    }
+    //forward everything else to CAN 0 unless claiming no harness
+    return 0;
   }
   return -1;
 }
