@@ -643,10 +643,13 @@ class CarController():
           can_sends.insert(0, cruise_msg)
     apply_accel = 0.
     if self.PCC.pcc_available and frame % 5 == 0: # pedal processed at 20Hz
+      pedalcan = 2
+      if CS.useWithoutHarness:
+        pedalcan = 0
       apply_accel, accel_needed, accel_idx = self.PCC.update_pdl(enabled, CS, frame, actuators, pcm_speed, \
                     self.speed_limit_for_cc * CV.KPH_TO_MS, self.speedlimit_valid, \
                     self.set_speed_limit_active, self.speed_limit_offset * CV.KPH_TO_MS, self.alca_enabled)
-      can_sends.append(teslacan.create_pedal_command_msg(apply_accel, int(accel_needed), accel_idx))
+      can_sends.append(teslacan.create_pedal_command_msg(apply_accel, int(accel_needed), accel_idx,pedalcan))
     self.last_angle = apply_angle
     self.last_accel = apply_accel
     

@@ -45,11 +45,13 @@ class CarInterface():
       mydbc = mydbc + "1916"
     self.cp = get_can_parser(CP,mydbc)
     self.epas_cp = None
+    self.pedal_cp = None
     if self.CS.useWithoutHarness:
-      self.epas_cp = get_epas_parser(CP,0)
+      self.epas_cp = self.CS.get_epas_parser(CP,0)
+      self.pedal_cp = self.CS.get_pedal_parser(CP,0)
     else:
-      self.epas_cp = get_epas_parser(CP,2)
-    self.pedal_cp = get_pedal_parser(CP)
+      self.epas_cp = self.CS.get_epas_parser(CP,2)
+      self.pedal_cp = self.CS.get_pedal_parser(CP,2)
 
     self.CC = None
     if CarController is not None:
