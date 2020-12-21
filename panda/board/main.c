@@ -485,6 +485,8 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp, bool hardwired) 
     case 0xde:
       if (setup->b.wValue.w < BUS_MAX) {
         can_speed[setup->b.wValue.w] = setup->b.wIndex.w;
+        can_init(CAN_NUM_FROM_BUS_NUM(setup->b.wValue.w));
+        /* Tesla branch commented out:
         bool ret = can_init(CAN_NUM_FROM_BUS_NUM(setup->b.wValue.w));
         UNUSED(ret);
       }
@@ -496,6 +498,7 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp, bool hardwired) 
           (current_safety_mode == SAFETY_NOOUTPUT) ||
           (current_safety_mode == SAFETY_ELM327)) {
         unsafe_mode = setup->b.wValue.w;
+      */
       }
       break;
     // **** 0xe0: uart read
@@ -725,6 +728,8 @@ void TIM1_BRK_TIM9_IRQ_Handler(void) {
         heartbeat_counter += 1U;
       }
 
+    //BB we do not want to disable safety mode when on tesla
+    /*
       #ifdef EON
       // check heartbeat counter if we are running EON code.
       // if the heartbeat has been gone for a while, go to SILENT safety mode and enter power save
@@ -755,6 +760,7 @@ void TIM1_BRK_TIM9_IRQ_Handler(void) {
         current_board->set_usb_power_mode(USB_POWER_CDP);
       }
       #endif
+    */
 
       // check registers
       check_registers();
@@ -848,7 +854,7 @@ int main(void) {
 
   // init to SILENT and can silent
   //set_safety_mode(SAFETY_SILENT, 0);
-  set_safety_mode2(SAFETY_TESLA,0 );
+  set_safety_mode2(SAFETY_TESLA, 0);
 
   // enable CAN TXs
   current_board->enable_can_transceivers(true);
