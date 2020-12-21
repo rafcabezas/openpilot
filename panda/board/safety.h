@@ -271,7 +271,13 @@ int set_safety_hooks(uint16_t mode, int16_t param) {
 int set_safety_hooks2(uint16_t mode, int16_t param) {
   // reset state set by safety mode
   safety_mode_cnt = 0U;  // reset safety mode timer
-    relay_malfunction = false;
+
+  //BB prevent resetting if already in the correct mode
+  if ((mode > 0) && (current_safety == mode)) {
+    return 1;
+  }
+
+  relay_malfunction = false;
   gas_interceptor_detected = false;
   gas_interceptor_prev = 0;
   gas_pressed = false;
@@ -296,10 +302,7 @@ int set_safety_hooks2(uint16_t mode, int16_t param) {
 
   int set_status = -1;  // not set
   int hook_config_count = sizeof(safety_hook_registry) / sizeof(safety_hook_config);
-  //BB prevent resetting if already in the correct mode
-  if ((mode > 0) && (current_safety == mode)) {
-    return 1;
-  }
+
   for (int i = 0; i < hook_config_count; i++) {
     if (safety_hook_registry[i].id == mode) {
       current_hooks = safety_hook_registry[i].hooks;
