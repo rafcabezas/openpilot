@@ -35,6 +35,7 @@ setup(name='Boardd API Implementation',
           library_dirs=[
             './',
             PHONELIBS + '/capnp-cpp/' + ARCH_DIR + '/lib/',
+            PHONELIBS + '/capnp-c/' + ARCH_DIR + '/lib/'
           ],
           sources=['boardd_api_impl.pyx'],
           language="c++",

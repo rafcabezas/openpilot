@@ -1,6 +1,7 @@
+#pragma once
 #ifndef _UI_H
 #define _UI_H
-#include "cereal/gen/cpp/log.capnp.h"
+
 #ifdef __APPLE__
 #include <OpenGL/gl3.h>
 #define NANOVG_GL3_IMPLEMENTATION
@@ -14,6 +15,7 @@
 
 #include <capnp/serialize.h>
 #include <pthread.h>
+
 #include "nanovg.h"
 
 #include "common/mat.h"
@@ -22,7 +24,10 @@
 #include "common/framebuffer.h"
 #include "common/modeldata.h"
 #include "messaging.hpp"
+#include "cereal/gen/c/log.capnp.h"
+#include "bbuistate.h"
 #include "sound.hpp"
+
 
 #define STATUS_STOPPED 0
 #define STATUS_DISENGAGED 1
@@ -33,6 +38,11 @@
 #define NET_CONNECTED 0
 #define NET_DISCONNECTED 1
 #define NET_ERROR 2
+
+#define ALERTSIZE_NONE 0
+#define ALERTSIZE_SMALL 1
+#define ALERTSIZE_MID 2
+#define ALERTSIZE_FULL 3
 
 #define COLOR_BLACK nvgRGBA(0, 0, 0, 255)
 #define COLOR_BLACK_ALPHA(x) nvgRGBA(0, 0, 0, x)
@@ -49,6 +59,7 @@
 #define UI_BUF_COUNT 4
 //#define SHOW_SPEEDLIMIT 1
 //#define DEBUG_TURN
+
 
 const int vwp_w = 1920;
 const int vwp_h = 1080;
@@ -140,9 +151,9 @@ typedef struct UIScene {
   int front_box_x, front_box_y, front_box_width, front_box_height;
 
   uint64_t alert_ts;
-  std::string alert_text1;
-  std::string alert_text2;
-  cereal::ControlsState::AlertSize alert_size;
+  char alert_text1[1024];
+  char alert_text2[1024];
+  uint8_t alert_size;
   float alert_blinkingrate;
 
   float awareness_status;
@@ -150,14 +161,14 @@ typedef struct UIScene {
   // Used to show gps planner status
   bool gps_planner_active;
 
-  cereal::ThermalData::NetworkType networkType;
-  cereal::ThermalData::NetworkStrength networkStrength;
+  uint8_t networkType;
+  uint8_t networkStrength;
   int batteryPercent;
-  bool batteryCharging;
+  char batteryStatus[64];
   float freeSpace;
-  cereal::ThermalData::ThermalStatus thermalStatus;
+  uint8_t thermalStatus;
   int paTemp;
-  cereal::HealthData::HwType hwType;
+  int hwType;
   int satelliteCount;
   uint8_t athenaStatus;
 } UIScene;
@@ -177,7 +188,14 @@ typedef struct {
 } track_vertices_data;
 
 
+
 typedef struct UIState {
+
+  //BB define BBUIState
+  BBUIState b;
+  int plus_state;
+  //BB end
+
   pthread_mutex_t lock;
 
   // framebuffer
@@ -219,7 +237,7 @@ typedef struct UIState {
   Poller * poller;
   Poller * ublox_poller;
 
-  cereal::UiLayoutState::App active_app;
+  int active_app;
 
   // vision state
   bool vision_connected;
@@ -274,8 +292,9 @@ typedef struct UIState {
   bool limit_set_speed;
   float speed_lim_off;
   bool is_ego_over_limit;
-  std::string alert_type;
+  char alert_type[64];
   AudibleAlert alert_sound;
+  int alert_size;
   float alert_blinking_alpha;
   bool alert_blinked;
   bool started;
@@ -299,13 +318,40 @@ typedef struct UIState {
 } UIState;
 
 // API
-void ui_draw_vision_alert(UIState *s, cereal::ControlsState::AlertSize va_size, int va_color,
+void ui_draw_vision_alert(UIState *s, int va_size, int va_color,
                           const char* va_text1, const char* va_text2);
 void ui_draw(UIState *s);
 void ui_draw_sidebar(UIState *s);
 void ui_draw_image(NVGcontext *vg, float x, float y, float w, float h, int image, float alpha);
-void ui_draw_rect(NVGcontext *vg, float x, float y, float w, float h, NVGcolor color, float r = 0, int width = 0);
-void ui_draw_rect(NVGcontext *vg, float x, float y, float w, float h, NVGpaint paint, float r = 0);
 void ui_nvg_init(UIState *s);
+static void set_awake(UIState *s, bool awake); 
 
+#if !defined(QCOM) && !defined(QCOM2)
+#include "GLFW/glfw3.h"
+FramebufferState* framebuffer_init_linux(
+    const char* name, int32_t layer, int alpha,
+    int *out_w, int *out_h, GLFWmousebuttonfun mouse_event_handler);
 #endif
+#endif
+// TODO: this is also hardcoded in common/transformations/camera.py
+const mat3 intrinsic_matrix = (mat3){{
+  910., 0., 582.,
+  0., 910., 437.,
+  0.,   0.,   1.
+}};
+
+const uint8_t alert_colors[][4] = {
+  [STATUS_STOPPED] = {0x07, 0x23, 0x39, 0xf1},
+  [STATUS_DISENGAGED] = {0x17, 0x33, 0x49, 0xc8},
+  [STATUS_ENGAGED] = {0x17, 0x86, 0x44, 0xf1},
+  [STATUS_WARNING] = {0xDA, 0x6F, 0x25, 0xf1},
+  [STATUS_ALERT] = {0xC9, 0x22, 0x31, 0xf1},
+};
+
+const int alert_sizes[] = {
+  [ALERTSIZE_NONE] = 0,
+  [ALERTSIZE_SMALL] = 241,
+  [ALERTSIZE_MID] = 390,
+  [ALERTSIZE_FULL] = vwp_h,
+};
+

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import requests
 import sys
+import tempfile
 
 from selfdrive.car.car_helpers import interface_names
 from selfdrive.test.process_replay.process_replay import replay_process, CONFIGS
@@ -12,6 +14,7 @@ from tools.lib.logreader import LogReader
 INJECT_MODEL = 0
 
 segments = [
+  ("TESLA", "d3126df386f83c4d|2020-04-22--13-17-39--3"),     # TESLA.MODELS
   ("HONDA", "0375fdf7b1ce594d|2019-06-13--08-32-25--3"),      # HONDA.ACCORD
   ("HONDA", "99c94dc769b5d96e|2019-08-03--14-19-59--2"),      # HONDA.CIVIC
   ("TOYOTA", "77611a1fac303767|2020-02-29--13-29-33--3"),     # TOYOTA.COROLLA_TSS2
@@ -34,7 +37,6 @@ BASE_URL = "https://commadataci.blob.core.windows.net/openpilotci/"
 # run the full test (including checks) when no args given
 FULL_TEST = len(sys.argv) <= 1
 
-
 def get_segment(segment_name, original=True):
   route_name, segment_num = segment_name.rsplit("--", 1)
   if original:
@@ -43,13 +45,19 @@ def get_segment(segment_name, original=True):
     process_replay_dir = os.path.dirname(os.path.abspath(__file__))
     model_ref_commit = open(os.path.join(process_replay_dir, "model_ref_commit")).read().strip()
     rlog_url = BASE_URL + "%s/%s/rlog_%s.bz2" % (route_name.replace("|", "/"), segment_num, model_ref_commit)
+  req = requests.get(rlog_url)
+  assert req.status_code == 200, ("Failed to download log for %s" % segment_name)
 
-  return rlog_url
-
+  with tempfile.NamedTemporaryFile(delete=False, suffix=".bz2") as f:
+    f.write(req.content)
+    return f.name
 
 def test_process(cfg, lr, cmp_log_fn, ignore_fields=[], ignore_msgs=[]):
-  url = BASE_URL + os.path.basename(cmp_log_fn)
-  cmp_log_msgs = list(LogReader(url))
+  if not os.path.isfile(cmp_log_fn):
+    assert False, ("Failed to open %s" % cmp_log_fn)
+  else:
+    print("Opening file [%s]" % cmp_log_fn)
+    cmp_log_msgs = list(LogReader(cmp_log_fn))
 
   log_msgs = replay_process(cfg, lr)
 
@@ -66,7 +74,6 @@ def test_process(cfg, lr, cmp_log_fn, ignore_fields=[], ignore_msgs=[]):
       raise Exception("Route never enabled: %s" % segment)
 
   return compare_logs(cmp_log_msgs, log_msgs, ignore_fields+cfg.ignore, ignore_msgs)
-
 
 def format_diff(results, ref_commit):
   diff1, diff2 = "", ""
@@ -120,6 +127,7 @@ if __name__ == "__main__":
   procs_whitelisted = len(args.whitelist_procs) > 0
 
   process_replay_dir = os.path.dirname(os.path.abspath(__file__))
+  ref_files_dir = os.path.join(process_replay_dir,"ref_files")
   try:
     ref_commit = open(os.path.join(process_replay_dir, "ref_commit")).read().strip()
   except:
@@ -152,8 +160,9 @@ if __name__ == "__main__":
           (not procs_whitelisted and cfg.proc_name in args.blacklist_procs):
         continue
 
-      cmp_log_fn = os.path.join(process_replay_dir, "%s_%s_%s.bz2" % (segment, cfg.proc_name, ref_commit))
+      cmp_log_fn = os.path.join(ref_files_dir, "%s_%s_%s.bz2" % (segment, cfg.proc_name, ref_commit))
       results[segment][cfg.proc_name] = test_process(cfg, lr, cmp_log_fn, args.ignore_fields, args.ignore_msgs)
+    os.remove(rlog_fn)
 
   diff1, diff2, failed = format_diff(results, ref_commit)
   with open(os.path.join(process_replay_dir, "diff.txt"), "w") as f:

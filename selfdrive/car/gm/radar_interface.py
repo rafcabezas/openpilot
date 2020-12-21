@@ -43,7 +43,10 @@ def create_radar_can_parser(car_fingerprint):
 
 class RadarInterface(RadarInterfaceBase):
   def __init__(self, CP):
-    super().__init__(CP)
+    # radar
+    self.pts = {}
+
+    self.delay = 0  # Delay of radar
 
     self.rcp = create_radar_can_parser(CP.carFingerprint)
 

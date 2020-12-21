@@ -230,9 +230,9 @@ int main(int argc, char **argv) {
         posenet_publish(posenet_sock, extra.frame_id, model_buf, extra.timestamp_eof);
 
         LOGD("model process: %.2fms, from last %.2fms", mt2-mt1, mt1-last);
+	printf("model process: %.2fms, from last %.2fms\n", mt2-mt1, mt1-last);
         last = mt1;
       }
-
     }
     visionbuf_free(&yuv_ion);
   }
@@ -252,3 +252,4 @@ int main(int argc, char **argv) {
 
   return 0;
 }
+

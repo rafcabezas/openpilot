@@ -21,6 +21,7 @@ from selfdrive.car.chrysler.values import CAR as CHRYSLER
 from selfdrive.car.subaru.values import CAR as SUBARU
 from selfdrive.car.volkswagen.values import CAR as VOLKSWAGEN
 from selfdrive.car.nissan.values import CAR as NISSAN
+from selfdrive.car.tesla.values import CAR as TESLA
 
 
 os.environ['NOCRASH'] = '1'
@@ -349,6 +350,10 @@ routes = {
     'carFingerprint': NISSAN.LEAF,
     'enableCamera': True,
   },
+  "d3126df386f83c4d|2020-04-22--13-17-39": {
+    'carFingerprint': TESLA.MODELS,
+    'enableCamera': True,
+  },
 }
 
 passive_routes = [
@@ -391,7 +396,6 @@ non_tested_cars = [
   TOYOTA.CHR,
   TOYOTA.CHRH,
   TOYOTA.HIGHLANDERH,
-  TOYOTA.HIGHLANDERH_TSS2,
 ]
 
 if __name__ == "__main__":

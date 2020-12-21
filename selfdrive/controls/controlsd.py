@@ -25,10 +25,12 @@ from selfdrive.controls.lib.alertmanager import AlertManager
 from selfdrive.controls.lib.vehicle_model import VehicleModel
 from selfdrive.controls.lib.planner import LON_MPC_STEP
 from selfdrive.locationd.calibration_helpers import Calibration, Filter
+from selfdrive.tinklad.tinkla_interface import TinklaClient
+
 
 LANE_DEPARTURE_THRESHOLD = 0.1
 STEER_ANGLE_SATURATION_TIMEOUT = 1.0 / DT_CTRL
-STEER_ANGLE_SATURATION_THRESHOLD = 2.5  # Degrees
+STEER_ANGLE_SATURATION_THRESHOLD = 250  # Degrees
 
 ThermalStatus = log.ThermalData.ThermalStatus
 State = log.ControlsState.OpenpilotState
@@ -116,7 +118,7 @@ def data_sample(CI, CC, sm, can_sock, state, mismatch_counter, can_error_counter
     else:
       events.append(create_event('calibrationInvalid', [ET.NO_ENTRY, ET.SOFT_DISABLE]))
 
-  if CS.vEgo > 92 * CV.MPH_TO_MS:
+  if CS.vEgo > 150 * CV.MPH_TO_MS:
     events.append(create_event('speedTooHigh', [ET.NO_ENTRY, ET.SOFT_DISABLE]))
 
   # When the panda and controlsd do not agree on controls_allowed
@@ -437,6 +439,13 @@ def data_send(sm, pm, CS, CI, CP, VM, state, events, actuators, v_cruise_kph, rk
 
   return CC, events_bytes
 
+def logAllAliveAndValidInfoToTinklad(sm, tinklaClient):
+  areAllAlive,aliveProcessName,aliveCount = sm.all_alive_with_info()
+  areAllValid, validProcessName, validCount = sm.all_valid_with_info()
+  if not areAllAlive:
+    tinklaClient.logProcessCommErrorEvent(source="carcontroller", processName=aliveProcessName, count=aliveCount, eventType="Not Alive")
+  else:
+    tinklaClient.logProcessCommErrorEvent(source="carcontroller", processName=validProcessName, count=validCount, eventType="Not Valid")
 
 def controlsd_thread(sm=None, pm=None, can_sock=None):
   gc.disable()
@@ -446,6 +455,7 @@ def controlsd_thread(sm=None, pm=None, can_sock=None):
 
   params = Params()
 
+  tinklaClient = TinklaClient()
   is_metric = params.get("IsMetric", encoding='utf8') == "1"
   is_ldw_enabled = params.get("IsLdwEnabled", encoding='utf8') == "1"
   passive = params.get("Passive", encoding='utf8') == "1"
@@ -548,6 +558,7 @@ def controlsd_thread(sm=None, pm=None, can_sock=None):
       events.append(create_event('radarCommIssue', [ET.NO_ENTRY, ET.SOFT_DISABLE]))
     elif not sm.all_alive_and_valid():
       events.append(create_event('commIssue', [ET.NO_ENTRY, ET.SOFT_DISABLE]))
+      logAllAliveAndValidInfoToTinklad(sm=sm, tinklaClient=tinklaClient)
     if not sm['pathPlan'].mpcSolutionValid:
       events.append(create_event('plannerError', [ET.NO_ENTRY, ET.IMMEDIATE_DISABLE]))
     if not sm['pathPlan'].sensorValid and os.getenv("NOSENSOR") is None:
@@ -562,6 +573,7 @@ def controlsd_thread(sm=None, pm=None, can_sock=None):
       events.append(create_event('radarCanError', [ET.NO_ENTRY, ET.SOFT_DISABLE]))
     if not CS.canValid:
       events.append(create_event('canError', [ET.NO_ENTRY, ET.IMMEDIATE_DISABLE]))
+      tinklaClient.logCANErrorEvent(source="carcontroller", canMessage=0, additionalInformation="Invalid CAN")
     if not sounds_available:
       events.append(create_event('soundsUnavailable', [ET.NO_ENTRY, ET.PERMANENT]))
     if internet_needed:

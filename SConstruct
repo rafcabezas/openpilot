@@ -12,9 +12,12 @@ AddOption('--asan',
           help='turn on ASAN')
 
 arch = subprocess.check_output(["uname", "-m"], encoding='utf8').rstrip()
+is_tbp = os.path.isfile('/data/tinkla_buddy_pro')
+if arch == "aarch64" and is_tbp:
+  arch = "jarch64"
 if platform.system() == "Darwin":
   arch = "Darwin"
-if arch == "aarch64" and not os.path.isdir("/system"):
+if arch == "aarch64" and (not os.path.isdir("/system")):
   arch = "larch64"
 
 webcam = bool(ARGUMENTS.get("use_webcam", 0))
@@ -32,6 +35,7 @@ if arch == "aarch64" or arch == "larch64":
 
   cpppath = [
     "#phonelibs/opencl/include",
+    "#phonelibs/snpe/include",
   ]
 
   libpath = [
@@ -39,11 +43,11 @@ if arch == "aarch64" or arch == "larch64":
     "/data/data/com.termux/files/usr/lib",
     "/system/vendor/lib64",
     "/system/comma/usr/lib",
-    "#phonelibs/nanovg",
+    "#phonelibs/nanovg",	
   ]
 
   if arch == "larch64":
-    cpppath += ["#phonelibs/capnp-cpp/include"]
+    cpppath += ["#phonelibs/capnp-cpp/include", "#phonelibs/capnp-c/include"]
     libpath += ["#phonelibs/snpe/larch64"]
     libpath += ["#phonelibs/libyuv/larch64/lib"]
     libpath += ["#external/capnparm/lib", "/usr/lib/aarch64-linux-gnu"]
@@ -56,20 +60,57 @@ if arch == "aarch64" or arch == "larch64":
     cflags = ["-DQCOM", "-mcpu=cortex-a57"]
     cxxflags = ["-DQCOM", "-mcpu=cortex-a57"]
     rpath = ["/system/vendor/lib64"]
-
+elif arch == "jarch64":
+  webcam=True
+  lenv = {
+      "LD_LIBRARY_PATH": '/usr/lib:/usr/local/lib/:/usr/lib/aarch64-linux-gnu',
+      "PATH": os.environ['PATH'],
+      "ANDROID_DATA": "/data",
+      "ANDROID_ROOT": "/",
+  }
+  cflags = []
+  cxxflags = []
+  cpppath = [
+    "/usr/local/include",
+    "/usr/local/include/opencv4",
+    "/usr/include/khronos-api",
+    "/usr/include",
+    "#phonelibs/snpe/include",
+    "/usr/include/aarch64-linux-gnu",
+  ]
+  libpath = [
+    "/usr/local/lib",
+    "/usr/lib/aarch64-linux-gnu",
+    "/usr/lib",
+    "/data/op_rk3399_setup/external/snpe/lib/lib",
+    "/data/data/com.termux/files/usr/lib",
+    "#phonelibs/nanovg",
+    "/data/op_rk3399_setup/support_files/lib",
+  ]
+  rpath = ["/usr/local/lib",
+    "/usr/lib/aarch64-linux-gnu",
+    "/usr/lib",
+    "/data/op_rk3399_setup/external/snpe/lib/lib",
+    "/data/op_rk3399_setup/support_files/lib",
+    "cereal",
+    "selfdrive/common",
+  ] 
 else:
   lenv = {
     "PATH": "#external/bin:" + os.environ['PATH'],
   }
   cpppath = [
     "#phonelibs/capnp-cpp/include",
+    "#phonelibs/capnp-c/include",
     "#phonelibs/zmq/x64/include",
     "#external/tensorflow/include",
+    "#phonelibs/snpe/include",
   ]
 
   if arch == "Darwin":
     libpath = [
       "#phonelibs/capnp-cpp/mac/lib",
+      "#phonelibs/capnp-c/mac/lib",
       "#phonelibs/libyuv/mac/lib",
       "#cereal",
       "#selfdrive/common",
@@ -79,6 +120,7 @@ else:
   else:
     libpath = [
       "#phonelibs/capnp-cpp/x64/lib",
+      "#phonelibs/capnp-c/x64/lib",
       "#phonelibs/snpe/x86_64-linux-clang",
       "#phonelibs/zmq/x64/lib",
       "#phonelibs/libyuv/x64/lib",
@@ -127,16 +169,16 @@ env = Environment(
     "#phonelibs/bzip2",
     "#phonelibs/libyuv/include",
     "#phonelibs/openmax/include",
+    "#phonelibs/json/src",
     "#phonelibs/json11",
     "#phonelibs/eigen",
     "#phonelibs/curl/include",
-    #"#phonelibs/opencv/include", # use opencv4 instead
+    #"#phonelibs/opencv/include",
     "#phonelibs/libgralloc/include",
     "#phonelibs/android_frameworks_native/include",
     "#phonelibs/android_hardware_libhardware/include",
     "#phonelibs/android_system_core/include",
     "#phonelibs/linux/include",
-    "#phonelibs/snpe/include",
     "#phonelibs/nanovg",
     "#selfdrive/common",
     "#selfdrive/camerad",
@@ -193,6 +235,8 @@ if arch == 'larch64':
   zmq = 'zmq'
 else:
   zmq = FindFile("libzmq.a", libpath)
+if is_tbp:
+  zmq = FindFile("libzmq.so", libpath)
 Export('env', 'arch', 'zmq', 'SHARED', 'webcam')
 
 # cereal and messaging are shared with the system
@@ -211,7 +255,7 @@ Import('_common', '_visionipc', '_gpucommon', '_gpu_libs')
 if SHARED:
   common, visionipc, gpucommon = abspath(common), abspath(visionipc), abspath(gpucommon)
 else:
-  common = [_common, 'json11']
+  common = [_common, 'json']
   visionipc = _visionipc
   gpucommon = [_gpucommon] + _gpu_libs
 
@@ -245,4 +289,5 @@ if arch == "aarch64":
 
 SConscript(['selfdrive/locationd/SConscript'])
 SConscript(['selfdrive/locationd/kalman/SConscript'])
-SConscript(['tools/lib/index_log/SConscript'])
+
+# TODO: finish cereal, dbcbuilder, MPC

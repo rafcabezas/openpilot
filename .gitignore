@@ -56,7 +56,6 @@ xx
 panda_jungle
 
 .coverage*
-coverage.xml
 htmlcov
 pandaextra
 

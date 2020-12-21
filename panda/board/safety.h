@@ -8,6 +8,7 @@
 #include "safety/safety_gm_ascm.h"
 #include "safety/safety_gm.h"
 #include "safety/safety_ford.h"
+#include "safety/safety_cadillac.h"
 #include "safety/safety_hyundai.h"
 #include "safety/safety_chrysler.h"
 #include "safety/safety_subaru.h"
@@ -24,6 +25,7 @@
 #define SAFETY_GM 4U
 #define SAFETY_HONDA_BOSCH_GIRAFFE 5U
 #define SAFETY_FORD 6U
+#define SAFETY_CADILLAC 7U
 #define SAFETY_HYUNDAI 8U
 #define SAFETY_CHRYSLER 9U
 #define SAFETY_TESLA 10U
@@ -35,7 +37,6 @@
 #define SAFETY_GM_ASCM 18U
 #define SAFETY_NOOUTPUT 19U
 #define SAFETY_HONDA_BOSCH_HARNESS 20U
-#define SAFETY_VOLKSWAGEN_PQ 21U
 #define SAFETY_SUBARU_LEGACY 22U
 
 uint16_t current_safety_mode = SAFETY_SILENT;
@@ -182,15 +183,6 @@ bool addr_safety_check(CAN_FIFOMailBox_TypeDef *to_push,
   return is_msg_valid(rx_checks, index);
 }
 
-void relay_malfunction_set(void) {
-  relay_malfunction = true;
-  fault_occurred(FAULT_RELAY_MALFUNCTION);
-}
-
-void relay_malfunction_reset(void) {
-  relay_malfunction = false;
-  fault_recovered(FAULT_RELAY_MALFUNCTION);
-}
 
 typedef struct {
   uint16_t id;
@@ -211,9 +203,9 @@ const safety_hook_config safety_hook_registry[] = {
   {SAFETY_SUBARU_LEGACY, &subaru_legacy_hooks},
   {SAFETY_MAZDA, &mazda_hooks},
   {SAFETY_VOLKSWAGEN_MQB, &volkswagen_mqb_hooks},
-  {SAFETY_VOLKSWAGEN_PQ, &volkswagen_pq_hooks},
   {SAFETY_NOOUTPUT, &nooutput_hooks},
 #ifdef ALLOW_DEBUG
+  {SAFETY_CADILLAC, &cadillac_hooks},
   {SAFETY_TESLA, &tesla_hooks},
   {SAFETY_NISSAN, &nissan_hooks},
   {SAFETY_ALLOUTPUT, &alloutput_hooks},
@@ -221,11 +213,23 @@ const safety_hook_config safety_hook_registry[] = {
   {SAFETY_FORD, &ford_hooks},
 #endif
 };
+int current_safety = -1;
 
 int set_safety_hooks(uint16_t mode, int16_t param) {
+  //BB prevent resetting if already in the correct mode
+  UNUSED(mode);
+  UNUSED(param);
+  return 1;
+}
+
+int set_safety_hooks2(uint16_t mode, int16_t param) {
   safety_mode_cnt = 0U;  // reset safety mode timer
   int set_status = -1;  // not set
   int hook_config_count = sizeof(safety_hook_registry) / sizeof(safety_hook_config);
+  //BB prevent resetting if already in the correct mode
+  if ((mode > 0) && (current_safety == mode)) {
+    return 1;
+  }
   for (int i = 0; i < hook_config_count; i++) {
     if (safety_hook_registry[i].id == mode) {
       current_hooks = safety_hook_registry[i].hooks;

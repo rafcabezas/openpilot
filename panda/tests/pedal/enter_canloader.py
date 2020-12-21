@@ -24,7 +24,7 @@ class CanHandle(object):
     finally:
       signal.alarm(0)
 
-    #print "R:",ret.encode("hex")
+    # "R:",ret.encode("hex")
     return ret
 
   def controlWrite(self, request_type, request, value, index, data, timeout=0):
@@ -57,12 +57,14 @@ if __name__ == "__main__":
   while 1:
     if len(p.can_recv()) == 0:
       break
-
+  print("entering bootloader mode")
   if args.recover:
     p.can_send(0x200, b"\xce\xfa\xad\xde\x1e\x0b\xb0\x02", 0)
+    p.can_send(0x551, b"\xce\xfa\xad\xde\x1e\x0b\xb0\x02", 0)
     exit(0)
   else:
     p.can_send(0x200, b"\xce\xfa\xad\xde\x1e\x0b\xb0\x0a", 0)
+    p.can_send(0x551, b"\xce\xfa\xad\xde\x1e\x0b\xb0\x0a", 0)
 
   if args.fn:
     time.sleep(0.1)
