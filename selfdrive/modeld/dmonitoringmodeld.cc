@@ -15,25 +15,6 @@
 #include <linux/limits.h>
 #endif
 
-bool get_bool_config_option(const char *key) {
-  char line[500];
-  FILE *stream;
-  stream = fopen("/data/bb_openpilot.cfg", "r");
-  while(fgets(line, 500, stream) != NULL)
-  {
-          char setting[256], value[256], oper[10];
-          if(line[0] == '#') continue;
-          if(sscanf(line, "%s %s %s", setting, oper, value) != 3) {
-            continue;
-          }       
-          if ((strcmp(key, setting) == 0) && (strcmp("True", value) == 0)) {
-            fclose(stream);
-            return true;
-          }
-  }
-  fclose(stream);
-  return false;
-}
 
 volatile sig_atomic_t do_exit = 0;
 
@@ -44,10 +25,6 @@ static void set_do_exit(int sig) {
 int main(int argc, char **argv) {
   int err;
   setpriority(PRIO_PROCESS, 0, -15);
-
-#ifdef QCOM2
-  set_core_affinity(5);
-#endif
 
   signal(SIGINT, (sighandler_t)set_do_exit);
   signal(SIGTERM, (sighandler_t)set_do_exit);
@@ -70,8 +47,6 @@ int main(int argc, char **argv) {
     }
     LOGW("connected with buffer size: %d", buf_info.buf_len);
 
-    bool is_dm_throttled = get_bool_config_option("throttle_driver_monitor");
-    bool is_dm_disabled = !get_bool_config_option("enable_driver_monitor");
     double last = 0;
     while (!do_exit) {
       VIPCBuf *buf;
@@ -87,21 +62,11 @@ int main(int argc, char **argv) {
       double t2 = millis_since_boot();
 
       // send dm packet
-      dmonitoring_publish(pm, extra.frame_id, res, (t2-t1)/1000.0);
+      const float* raw_pred_ptr = send_raw_pred ? (const float *)dmonitoringmodel.output : nullptr;
+      dmonitoring_publish(pm, extra.frame_id, res, raw_pred_ptr, (t2-t1)/1000.0);
 
       LOGD("dmonitoring process: %.2fms, from last %.2fms", t2-t1, t1-last);
       last = t1;
-      if (is_dm_disabled) {
-        usleep(1*1000*1000);
-      } else if (is_dm_throttled) {
-        usleep(250*1000);
-      } else {
-#ifdef QCOM2
-      // this makes it run at about 2.7Hz on tici CPU to deal with modeld lags
-      // TODO: DSP needs to be freed (again)
-      usleep(250000);
-#endif
-      }
     }
     visionstream_destroy(&stream);
   }
