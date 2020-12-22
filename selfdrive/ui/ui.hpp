@@ -246,13 +246,15 @@ int read_param(T* param, const char *param_name, bool persistent_param = false){
 // TODO: this is also hardcoded in common/transformations/camera.py
 // TODO: choose based on frame input size
 #ifdef QCOM2
-const float zoom = 1.5;
+const float y_offset = 150.0;
+const float zoom = 1.1;
 const mat3 intrinsic_matrix = (mat3){{
   2648.0, 0.0, 1928.0/2,
   0.0, 2648.0, 1208.0/2,
   0.0,   0.0,   1.0
 }};
 #else
+const float y_offset = 0.0;
 const float zoom = 2.35;
 const mat3 intrinsic_matrix = (mat3){{
   910., 0., 1164.0/2,

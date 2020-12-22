@@ -18,7 +18,10 @@ extern "C"{
 #include "paint.hpp"
 #include "sidebar.hpp"
 
-
+// Tesla branch:
+static void ui_draw_vision_alert(UIState *s);
+void ui_draw_vision_alert_b(UIState *s) { ui_draw_vision_alert(s); }
+/* Tesla Branch commented out
 // TODO: this is also hardcoded in common/transformations/camera.py
 // TODO: choose based on frame input size
 #ifdef QCOM2
@@ -38,6 +41,7 @@ const mat3 intrinsic_matrix = (mat3){{
   0.,   0.,   1.
 }};
 #endif
+*/
 
 // Projects a point in car to space to the corresponding point in full frame
 // image space.

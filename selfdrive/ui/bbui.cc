@@ -396,15 +396,16 @@ void bb_draw_buttons( UIState *s) {
   }
 }
 
+void ui_draw_vision_alert_b(UIState *s);
 void bb_ui_draw_custom_alert( UIState *s) {
     if ((strlen(s->b.custom_message) > 0) && (s->scene.alert_text1.length()==0)){
       if ((!((bb_get_button_status(s,(char *)"msg") == 0) && (s->b.custom_message_status<=3))) && (s->vision_connected == true)) {
-        ui_draw_vision_alert(s, cereal::ControlsState::AlertSize::SMALL, s->b.custom_message_status,
-                              s->b.custom_message,"");
+        s->scene.alert_size = cereal::ControlsState::AlertSize::MID;
+        s->scene.alert_text1 = s->b.custom_message;
+        ui_draw_vision_alert_b(s);
       }
     } 
 }
-
 
 void bb_ui_draw_measures_left( UIState *s, int bb_x, int bb_y, int bb_w ) {
   int bb_rx = bb_x + (int)(bb_w/2);

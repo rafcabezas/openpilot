@@ -6,6 +6,7 @@ from collections import namedtuple
 from typing import Dict, Optional, Tuple
 
 import psutil
+import sys
 from smbus2 import SMBus
 
 import cereal.messaging as messaging
@@ -19,10 +20,16 @@ from selfdrive.hardware import EON, HARDWARE, TICI
 from selfdrive.loggerd.config import get_available_percent
 from selfdrive.pandad import get_expected_signature
 from selfdrive.swaglog import cloudlog
-from selfdrive.thermald.power_monitoring import PowerMonitoring
+from selfdrive.thermald.power_monitoring import PowerMonitoringTesla
+from selfdrive.car.tesla.readconfig import CarSettings
 from selfdrive.version import get_git_branch, terms_version, training_version
 
 ThermalConfig = namedtuple('ThermalConfig', ['cpu', 'gpu', 'mem', 'bat', 'ambient'])
+
+WEBCAM = os.getenv("WEBCAM") is not None
+if WEBCAM and (sys.version_info.major == 3 and sys.version_info.minor == 6):
+    from backports.datetime_fromisoformat import MonkeyPatch
+    MonkeyPatch.patch_fromisoformat()
 
 FW_SIGNATURE = get_expected_signature()
 
@@ -31,8 +38,8 @@ NetworkType = log.ThermalData.NetworkType
 NetworkStrength = log.ThermalData.NetworkStrength
 CURRENT_TAU = 15.   # 15s time constant
 CPU_TEMP_TAU = 5.   # 5s time constant
-DAYS_NO_CONNECTIVITY_MAX = 7  # do not allow to engage after a week without internet
-DAYS_NO_CONNECTIVITY_PROMPT = 4  # send an offroad prompt after 4 days with no internet
+DAYS_NO_CONNECTIVITY_MAX = 70  # do not allow to engage after a week without internet
+DAYS_NO_CONNECTIVITY_PROMPT = 64  # send an offroad prompt after 4 days with no internet
 DISCONNECT_TIMEOUT = 5.  # wait 5 seconds before going offroad after disconnect so you get an alert
 
 prev_offroad_states: Dict[str, Tuple[bool, Optional[str]]] = {}
@@ -123,7 +130,11 @@ _TEMP_THRS_L = [42.5, 57.5, 72.5, 10000]
 _FAN_SPEEDS = [0, 16384, 32768, 65535]
 # max fan speed only allowed if battery is hot
 _BAT_TEMP_THRESHOLD = 45.
-
+if CarSettings().get_value("hasNoctuaFan"):
+  # fan speed options
+  _FAN_SPEEDS = [0, 65535, 65535, 65535] # Noctua fan is super quiet, so it can run on high most of the time.
+  # max fan speed only allowed if battery is hot
+  _BAT_TEMP_THERSHOLD = 20. # No need to wait for the battery to get hot, when you have a Notua fan.
 
 def handle_fan_eon(max_cpu_temp, bat_temp, fan_speed, ignition):
   new_speed_h = next(speed for speed, temp_h in zip(_FAN_SPEEDS, _TEMP_THRS_H) if temp_h > max_cpu_temp)
@@ -145,6 +156,25 @@ def handle_fan_eon(max_cpu_temp, bat_temp, fan_speed, ignition):
   return fan_speed
 
 
+def check_car_battery_voltage(should_start, health, charging_disabled, msg, limitBatteryMinMax, batt_min, batt_max):
+
+  # charging disallowed if:
+  #   - there are health packets from panda, and;
+  #   - 12V battery voltage is too low, and;
+  #   - onroad isn't started
+
+  limitBatteryMin = limitBatteryMinMax and (msg.thermal.batteryPercent < batt_min)
+  limitBatteryMax = limitBatteryMinMax and (msg.thermal.batteryPercent > batt_max)
+  #print limitBatteryMinMax,batt_min, batt_max, msg.thermal.batteryPercent
+  if charging_disabled and (health is None or health.health.voltage > 11800) and (limitBatteryMin or not limitBatteryMinMax):
+    charging_disabled = False
+    os.system('echo "1" > /sys/class/power_supply/battery/charging_enabled')
+  elif (not charging_disabled) and ((health is not None and health.health.voltage < 11500 and not should_start) or limitBatteryMax):
+    charging_disabled = True
+    os.system('echo "0" > /sys/class/power_supply/battery/charging_enabled')
+
+  return charging_disabled
+
 def handle_fan_uno(max_cpu_temp, bat_temp, fan_speed, ignition):
   new_speed = int(interp(max_cpu_temp, [40.0, 80.0], [0, 80]))
 
@@ -162,6 +192,16 @@ def set_offroad_alert_if_changed(offroad_alert: str, show_alert: bool, extra_tex
 
 
 def thermald_thread():
+  #BB
+  # if limitting battery to Min-Max%. edit /data/bb_openpilot.cfg
+  car_set = CarSettings()
+  limitBatteryMinMax = car_set.get_value("limitBatteryMinMax")
+  batt_min = car_set.get_value("limitBattery_Min")
+  batt_max = car_set.get_value("limitBattery_Max")
+
+  # prevent LEECO from undervoltage
+  BATT_PERC_OFF = 10 if LEON else 3
+
   health_timeout = int(1000 * 2.5 * DT_TRML)  # 2.5x the expected health frequency
 
   # now loop
@@ -194,8 +234,11 @@ def thermald_thread():
   handle_fan = None
   is_uno = False
 
+  # Make sure charging is enabled
+  charging_disabled = False
+
   params = Params()
-  pm = PowerMonitoring()
+  pm = PowerMonitoringTesla()
   no_panda_cnt = 0
 
   thermal_config = get_thermal_config()
@@ -360,8 +403,8 @@ def thermald_thread():
     set_offroad_alert_if_changed("Offroad_TemperatureTooHigh", (not startup_conditions["device_temp_good"]))
     should_start = all(startup_conditions.values())
 
-    startup_conditions["hardware_supported"] = health is not None and health.health.hwType not in [log.HealthData.HwType.whitePanda,
-                                                                                                   log.HealthData.HwType.greyPanda]
+    startup_conditions["hardware_supported"] = health is not None# and health.health.hwType not in [log.HealthData.HwType.whitePanda,
+                                                                 #                                  log.HealthData.HwType.greyPanda]
     set_offroad_alert_if_changed("Offroad_HardwareUnsupported", health is not None and not startup_conditions["hardware_supported"])
 
     if should_start:
@@ -387,6 +430,9 @@ def thermald_thread():
     msg.thermal.offroadPowerUsage = pm.get_power_used()
     msg.thermal.carBatteryCapacity = max(0, pm.get_car_battery_capacity())
 
+     #BB have to figure how to disable charging now
+    charging_disabled = check_car_battery_voltage(should_start, health, charging_disabled, msg, limitBatteryMinMax, batt_min, batt_max)
+
     # Check if we need to disable charging (handled by boardd)
     msg.thermal.chargingDisabled = pm.should_disable_charging(health, off_ts)
 
@@ -397,14 +443,14 @@ def thermald_thread():
       time.sleep(10)
       os.system('LD_LIBRARY_PATH="" svc power shutdown')
 
-    msg.thermal.chargingError = current_filter.x > 0. and msg.thermal.batteryPercent < 90  # if current is positive, then battery is being discharged
+    msg.thermal.chargingError = current_filter.x > 0. and msg.thermal.batteryPercent < 90  and not charging_disabled # if current is positive, then battery is being discharged
     msg.thermal.started = started_ts is not None
     msg.thermal.startedTs = int(1e9*(started_ts or 0))
 
     msg.thermal.thermalStatus = thermal_status
     thermal_sock.send(msg.to_bytes())
 
-    set_offroad_alert_if_changed("Offroad_ChargeDisabled", (not usb_power))
+    #Tesla branch commented out: set_offroad_alert_if_changed("Offroad_ChargeDisabled", (not usb_power))
 
     should_start_prev = should_start
     startup_conditions_prev = startup_conditions.copy()
