@@ -10,11 +10,15 @@ from common.params import Params, put_nonblocking
 from selfdrive.locationd.models.car_kf import CarKalman, ObservationKind, States
 from selfdrive.locationd.models.constants import GENERATED_DIR
 from selfdrive.swaglog import cloudlog
+from selfdrive.tinklad.tinkla_interface import TinklaClient
 
 KalmanStatus = log.LiveLocationKalman.Status
 
 
 class ParamsLearner:
+
+  tinklaClient = None
+
   def __init__(self, CP, steer_ratio, stiffness_factor, angle_offset):
     self.kf = CarKalman(GENERATED_DIR, steer_ratio, stiffness_factor, angle_offset)
 
@@ -32,6 +36,8 @@ class ParamsLearner:
     self.steering_angle = 0
 
     self.valid = True
+
+    self.tinklaClient = TinklaClient()
 
   def handle_log(self, t, which, msg):
     if which == 'liveLocationKalman':
@@ -135,6 +141,13 @@ def main(sm=None, pm=None):
         0.2 <= msg.liveParameters.stiffnessFactor <= 5.0,
         min_sr <= msg.liveParameters.steerRatio <= max_sr,
       ))
+
+      # Tesla branch:
+      if not msg.liveParameters.valid:
+        msg.liveParameters.valid = True 
+        self.tinklaClient.logErrorEvent(source="paramsd", text="angleOffsetAverage=%f, angleOffset=%f, stiffnessFactor=%f, steerRatio=%f, min_sr=%f, max_sr=%f" 
+          % (abs(msg.liveParameters.angleOffsetAverage), abs(msg.liveParameters.angleOffset), msg.liveParameters.stiffnessFactor, msg.liveParameters.steerRatio, min_sr, max_sr))
+      #
 
       if sm.frame % 1200 == 0:  # once a minute
         params = {
