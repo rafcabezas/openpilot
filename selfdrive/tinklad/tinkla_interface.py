@@ -140,6 +140,20 @@ class TinklaClient():
         event.value.textValue="%s\n%s\n%s\n%s" % (userInfo, gitInfo, canInfo, additionalInformation)
         self.logUserEvent(event)
 
+    def logErrorEvent(self, source, text, openPilotId = None):
+        if openPilotId is None:
+            openPilotId = self.openPilotId
+        event = tinkla.Interface.Event.new_message(
+            openPilotId=openPilotId,
+            source=source,
+            category=self.eventCategoryKeys.other,
+            name="Error",
+        )
+        userInfo = "User Handle: %s \nOpenPilotId: %s" % (self.userHandle, self.openPilotId)
+        gitInfo = "Git Remote: %s\nBranch: %s\nCommit: %s" % (self.gitRemote, self.gitBranch, self.gitHash)
+        event.value.textValue="%s\n%s\n%s" % (userInfo, gitInfo, text)
+        self.logUserEvent(event)
+
     def logProcessCommErrorEvent(self, source, processName, count, eventType, openPilotId = None):
         if not self.carSettings.shouldLogProcessCommErrors:
             return
