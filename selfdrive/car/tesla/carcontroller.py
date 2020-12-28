@@ -578,7 +578,7 @@ class CarController():
     if send_fake_msg:
       if enable_steer_control and op_status == 3:
         op_status = 0x5
-      park_brake_request = int(CS.ahbEnabled)
+      park_brake_request = 0 #experimental; disabled for now
       if park_brake_request == 1:
         print("Park Brake Request received")
       adaptive_cruise = 1 if (not self.PCC.pcc_available and self.ACC.adaptive) or self.PCC.pcc_available else 0
@@ -597,7 +597,7 @@ class CarController():
             self.DAS_202_noisyEnvironment, CS.DAS_doorOpen, CS.DAS_notInDrive, CS.enableDasEmulation, CS.enableRadarEmulation, \
             self.stopSignWarning, self.stopLightWarning, \
             self.DAS_222_accCameraBlind, self.DAS_219_lcTempUnavailableSpeed, self.DAS_220_lcTempUnavailableRoad, self.DAS_221_lcAborting, \
-            self.DAS_207_lkasUnavailable,self.DAS_208_rackDetected, self.DAS_025_steeringOverride,self.ldwStatus,0,CS.useWithoutHarness))
+            self.DAS_207_lkasUnavailable,self.DAS_208_rackDetected, self.DAS_025_steeringOverride,self.ldwStatus,0,CS.useWithoutHarness,CS.usesApillarHarness))
       self.stopLightWarning_last = self.stopLightWarning
       self.stopSignWarning_last = self.stopSignWarning
       self.warningNeeded = 0
