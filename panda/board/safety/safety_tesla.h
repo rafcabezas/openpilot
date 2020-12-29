@@ -984,7 +984,6 @@ static void do_fake_stalk_cancel(uint32_t RIR, uint32_t RDTR) {
 
 static void tesla_rx_hook(CAN_FIFOMailBox_TypeDef *to_push)
 {
-  bool valid = false;
   //not much to check yet on these, each tesla messaage has checksum in a different place
   
 
@@ -1008,21 +1007,6 @@ static void tesla_rx_hook(CAN_FIFOMailBox_TypeDef *to_push)
   {
     // Normal
     addr = to_push->RIR >> 21;
-  }
-  if (bus_number == 1) {
-    //radar is always accepted
-    valid = true;
-  } else 
-  if ((bus_number == 0) || (bus_number == 2)) {
-    if ((addr == 0x00E ) || (addr == 0x045 ) || (addr == 0x108 ) || 
-    (addr == 0x118 ) || (addr == 0x318 ) || (addr == 0x348 ) || (addr == 0x368))
-    {
-      valid = addr_safety_check(to_push, tesla_rx_checks, TESLA_RX_CHECK_LEN,
-                              NULL, NULL, NULL);
-    } else {
-      valid = true;
-    }
-
   }
 
   if ((addr == 0x398)  && (bus_number == 0)) {
