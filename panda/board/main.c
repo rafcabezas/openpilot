@@ -35,6 +35,8 @@
 
 #include "drivers/can.h"
 
+uint16_t prev_safety_mode = 0;
+
 // ********************* Serial debugging *********************
 
 bool check_started(void) {
@@ -117,6 +119,15 @@ void EXTI3_IRQHandler(void) {
 
 // this is the only way to leave silent mode
 void set_safety_mode(uint16_t mode, int16_t param) {
+  //BB to prevent any changes to safety
+  UNUSED(mode);
+  UNUSED(param);
+}
+
+void set_safety_mode2(uint16_t mode, int16_t param) {
+  if (prev_safety_mode == mode) {
+    return;
+  }
   int err = safety_set_mode(mode, param);
   if (err == -1) {
     puts("Error: safety set mode failed\n");
@@ -146,6 +157,7 @@ void set_safety_mode(uint16_t mode, int16_t param) {
           can_silent = ALL_CAN_LIVE;
           break;
       }
+    prev_safety_mode = mode;
     can_init_all();
   }
 }
