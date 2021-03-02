@@ -609,6 +609,7 @@ class CarController():
     # send enabled ethernet every 0.2 sec
     if frame % 20 == 0:
         can_sends.append(teslacan.create_enabled_eth_msg(1))
+ 
     if (not self.PCC.pcc_available) and frame % 5 == 0: # acc processed at 20Hz
       cruise_btn = self.ACC.update_acc(enabled, CS, frame, actuators, pcm_speed, \
                     self.speed_limit_ms * CV.MS_TO_KPH,
@@ -625,6 +626,8 @@ class CarController():
       pedalcan = 2
       if CS.useWithoutHarness:
         pedalcan = 0
+      elif CS.usesApillarHarness:
+        pedalcan = 1
       apply_accel, accel_needed, accel_idx = self.PCC.update_pdl(
                     enabled,
                     CS,

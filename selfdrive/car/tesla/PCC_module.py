@@ -233,6 +233,8 @@ class PCCController():
           pedalcan = 2
           if CS.useWithoutHarness:
             pedalcan = 0
+          elif CS.usesApillarHarness:
+            pedalcan = 1
           can_sends.append(teslacan.create_pedal_command_msg(0, 0, idx, pedalcan))
       return can_sends
 

@@ -83,6 +83,7 @@ char radar_VIN[] = "                 "; //leave empty if your radar VIN matches 
 int tesla_radar_vin_complete = 0;
 uint8_t tesla_radar_can = 1;
 uint8_t tesla_epas_can = 2;
+#define tesla_pedal_can (DAS_usesApillarHarness ? 1 : 2)
 int tesla_radar_trigger_message_id = 0; //not used by tesla, to showcase for other cars
 int radarPosition = 0; //0 nosecone, 1 facelift
 int radarEpasType = 0; //0/1 bosch, 2-4 mando
@@ -1060,7 +1061,7 @@ static int tesla_rx_hook(CAN_FIFOMailBox_TypeDef *to_push)
   }
 
   //let's see if the pedal was pressed
-  if ((addr == 0x552) && (bus_number == tesla_epas_can)) {
+  if ((addr == 0x552) && (bus_number == tesla_pedal_can)) {
     //m1 = 0.050796813
     //m2 = 0.101593626
     //d = -22.85856576
@@ -1980,7 +1981,7 @@ static int tesla_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd)
   }
 
   //first let's deal with the messages we need to send to radar
-  if ((bus_num == 0) || ((bus_num == 2 ) && (DAS_usesApillarHarness == 1)))
+  if ((bus_num == 0) || ((bus_num == 2) && (DAS_usesApillarHarness == 1)))
   {
     
     //compute return value; do not forward 0->2 and 2->0 if no epas harness
@@ -2052,6 +2053,13 @@ static int tesla_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd)
     return ret_val;
   }
 
+  // Don't forward pedal messages
+  if (bus_num == tesla_pedal_can) {
+    if ((addr == 0x551) || (addr == 0x552)) {
+      return -1;
+    }
+  }
+
   //now let's deal with CAN1 - Radar
   if (bus_num == tesla_radar_can) {
     //send radar 0x531 and 0x651 from Radar CAN to CAN0
@@ -2059,19 +2067,13 @@ static int tesla_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd)
       return 0;
     }
 
-    //block everything else from radar
+    // don't forward anything else
     return -1;
   }
 
   //now let's deal with CAN2 
   if ((bus_num == tesla_epas_can) && (bus_num > 0))
   {
-
-    // remove Pedal in forwards
-    if ((addr == 0x551) || (addr == 0x552)) {
-      return -1;
-    }
-
     //forward everything else to CAN 0 unless claiming no harness
     return 0;
   }

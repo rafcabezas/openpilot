@@ -44,11 +44,14 @@ class CarInterface(CarInterfaceBase):
     self.epas_cp = None
     self.pedal_cp = None
     if self.CS.useWithoutHarness:
-      self.epas_cp = self.CS.get_epas_parser(CP,0)
-      self.pedal_cp = self.CS.get_pedal_parser(CP,0)
+      self.epas_cp = self.CS.get_epas_parser(CP, 0)
+      self.pedal_cp = self.CS.get_pedal_parser(CP, 0)
     else:
-      self.epas_cp = self.CS.get_epas_parser(CP,2)
-      self.pedal_cp = self.CS.get_pedal_parser(CP,2)
+      self.epas_cp = self.CS.get_epas_parser(CP, 2)
+      if self.CS.usesApillarHarness:
+        self.pedal_cp = self.CS.get_pedal_parser(CP, 1)
+      else:
+        self.pedal_cp = self.CS.get_pedal_parser(CP, 2)
 
     self.CC = None
     if CarController is not None:
