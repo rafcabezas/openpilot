@@ -41,12 +41,12 @@ def laplacian_cdf(x, mu, b):
 
 def match_vision_to_cluster(v_ego, lead, clusters):
   # match vision point to best statistical cluster match
-  offset_vision_dist = lead.dist - RADAR_TO_CAMERA
+  offset_vision_dist = lead.xyva[0] - RADAR_TO_CAMERA
 
   def prob(c):
-    prob_d = laplacian_cdf(c.dRel, offset_vision_dist, lead.std)
-    prob_y = laplacian_cdf(c.yRel, lead.relY, lead.relYStd)
-    prob_v = laplacian_cdf(c.vRel, lead.relVel, lead.relVelStd)
+    prob_d = laplacian_cdf(c.dRel, offset_vision_dist, lead.xyvaStd[0])
+    prob_y = laplacian_cdf(c.yRel, -lead.xyva[1], lead.xyvaStd[1])
+    prob_v = laplacian_cdf(c.vRel, lead.xyva[2], lead.xyvaStd[2])
 
     # This is isn't exactly right, but good heuristic
     return prob_d * prob_y * prob_v
@@ -56,7 +56,7 @@ def match_vision_to_cluster(v_ego, lead, clusters):
   # if no 'sane' match is found return -1
   # stationary radar points can be false positives
   dist_sane = abs(cluster.dRel - offset_vision_dist) < max([(offset_vision_dist)*.25, 5.0])
-  vel_sane = (abs(cluster.vRel - lead.relVel) < 10) or (v_ego + cluster.vRel > 3)
+  vel_sane = (abs(cluster.vRel - lead.xyva[2]) < 10) or (v_ego + cluster.vRel > 3)
   if dist_sane and vel_sane:
     return cluster
   else:
@@ -123,11 +123,11 @@ class RadarD():
 
   def update(self, frame, sm, rr, enable_lead, rrext):
     self.current_time = 1e-9*max(sm.logMonoTime.values())
-    
-    if sm.updated['controlsState']:
-      self.v_ego = sm['controlsState'].vEgo
+
+    if sm.updated['carState']:
+      self.v_ego = sm['carState'].vEgo
       self.v_ego_hist.append(self.v_ego)
-    if sm.updated['model']:
+    if sm.updated['modelV2']:
       self.ready = True
     if self.use_tesla_radar:
       if sm.updated['pathPlan']:
@@ -340,26 +340,28 @@ class RadarD():
 
     # *** publish radarState ***
     dat = messaging.new_message('radarState')
-    dat.valid = sm.all_alive_and_valid()
+    dat.valid = sm.all_alive_and_valid() and len(rr.errors) == 0
     radarState = dat.radarState
-    radarState.mdMonoTime = sm.logMonoTime['model']
+    radarState.mdMonoTime = sm.logMonoTime['modelV2']
     radarState.canMonoTimes = list(rr.canMonoTimes)
     radarState.radarErrors = list(rr.errors)
-    radarState.controlsStateMonoTime = sm.logMonoTime['controlsState']
+    radarState.carStateMonoTime = sm.logMonoTime['carState']
 
     datext = tesla.ICLeads.new_message()
     if enable_lead:
-      l1d,l1x = get_lead(self.v_ego, self.ready, clusters, sm['model'].lead, low_speed_override=True,use_tesla_radar=self.use_tesla_radar)
-      l2d,l2x = get_lead(self.v_ego, self.ready, clusters, sm['model'].leadFuture, low_speed_override=False, use_tesla_radar=self.use_tesla_radar)
-      dat.radarState.leadOne = l1d
-      dat.radarState.leadTwo = l2d
+      if len(sm['modelV2'].leads) > 1:
+        l1d,l1x = get_lead(self.v_ego, self.ready, clusters, sm['modelV2'].leads[0], low_speed_override=True,use_tesla_radar=self.use_tesla_radar)
+        l2d,l2x = get_lead(self.v_ego, self.ready, clusters, sm['modelV2'].leads[0], low_speed_override=True,use_tesla_radar=self.use_tesla_radar)
+        
+        dat.radarState.leadOne = l1d
+        dat.radarState.leadTwo = l2d
     
-      datext.lead1trackId = l1x['trackId']
-      datext.lead1oClass = l1x['oClass']
-      datext.lead1length = l1x['length']
-      datext.lead2trackId = l2x['trackId']
-      datext.lead2oClass = l2x['oClass']
-      datext.lead2length = l2x['length']
+        datext.lead1trackId = l1x['trackId']
+        datext.lead1oClass = l1x['oClass']
+        datext.lead1length = l1x['length']
+        datext.lead2trackId = l2x['trackId']
+        datext.lead2oClass = l2x['oClass']
+        datext.lead2length = l2x['length']
     return dat, datext
 
 
@@ -382,9 +384,9 @@ def radard_thread(sm=None, pm=None, can_sock=None):
     can_sock = messaging.sub_sock('can')
   if sm is None:
     if CP.carName == "tesla":
-      sm = messaging.SubMaster(['model', 'controlsState', 'liveParameters', 'pathPlan'])
+    sm = messaging.SubMaster(['modelV2', 'carState', 'controlsState', 'liveParameters', 'pathPlan'])
     else:
-      sm = messaging.SubMaster(['model', 'controlsState'])
+      sm = messaging.SubMaster(['modelV2', 'carState'])
   if pm is None:
     pm = messaging.PubMaster(['radarState', 'liveTracks'])
   if CP.carName == "tesla":
